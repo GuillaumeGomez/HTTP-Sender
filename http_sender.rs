@@ -17,46 +17,31 @@ impl HttpSender {
         	Ok(ret) => ret
         };
 
-        let mut done = 0;
-        for tmp in addr.iter() {
-        	println!("-> {}", tmp);
-        	match TcpStream::connect(SocketAddr{ip: *tmp, port: self.port}) {
-        		Err(_) => {},
-        		Ok(ret) => {
-        			let mut socket = ret;
-        			let mut t = format!("GET {} HTTP/1.1", self.page);
+       	let mut socket: Option<TcpStream> = None;
+		addr.iter().skip_while(|&a| {
+			socket = TcpStream::connect(SocketAddr{ip: *a, port: 80}).ok();
+			socket.is_none()}).next();
+		match socket {
+			None => fail!("Couldn't connect to server"),
+			Some(mut sock) => {
+				let mut t = format!("GET {} HTTP/1.1", self.page);
 
-					t = format!("{}\r\nHost: {}\r\n", t, self.address);
-					t = format!("{}User-Agent: Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.1.5) Gecko/20091102 Firefox/3.5.5 (.NET CLR 3.5.30729)\r\n", t);
-					t = format!("{}Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n", t);
-					t = format!("{}Accept-Language: en-us,en;q=0.5\r\n", t);
-					t = format!("{}Accept-Encoding:\r\n", t);
-					done = 1;
-
-			    	match socket.write(t.into_bytes()) {
-			        	Err(_) => fail!("Couldn't send message"),
-			        	Ok(_) => {
-			        		let response = socket.read_to_end();
-			        		println!("Response from server :\n{}", response);
-			        	}
-			    	}
-        			break;
-        		},
-        	}
-        }
-        if done == 0 {
-        	fail!("Couldn't connect to host");
-    	}
+				t = format!("{}\r\nHost: {}\r\n", t, self.address);
+				t = format!("{}User-Agent: Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.1.5) Gecko/20091102 Firefox/3.5.5 (.NET CLR 3.5.30729)\r\n", t);
+				t = format!("{}Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n", t);
+				t = format!("{}Accept-Language: en-us,en;q=0.5\r\n", t);
+				t = format!("{}Accept-Encoding:\r\n", t);
+	        	match sock.write(t.into_bytes()) {
+				    Err(_) => fail!("Couldn't send message"),
+				    Ok(_) => {
+				    	let response = sock.read_to_end();
+				        println!("Response from server :\n{}", response);
+				    }
+				}
+			},
+		}
 	}
 }
-
-/*Accept-Encoding: gzip,deflate
-Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
-Keep-Alive: 300
-Connection: keep-alive
-Cookie: PHPSESSID=r2t5uvjq435r4q7ib3vtdjq120
-Pragma: no-cache
-Cache-Control: no-cache*/
 
 fn main() {
 	println!("bonjour !");
