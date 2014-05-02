@@ -6,6 +6,7 @@ use std::io::net::addrinfo::get_host_addresses;
 use std::io::net::ip::SocketAddr;
 use std::io::BufferedReader;
 use collections::HashMap;
+use std::os;
 
 struct ResponseData {
     headers: HashMap<~str, Vec<~str>>,
@@ -38,16 +39,16 @@ impl HttpSender {
             Some(mut sock) => {
                 let t = format!("GET {} HTTP/1.1\r\n\
                                 Host: {}\r\n\
-                                Accept: text/plain,text/html\r\n\
-                                Accept-Language: en-us\r\n\
+                                Accept: text/plain,text/html,*/*\r\n\
+                                Accept-Language: fr,en-US;q=0.8,en;q=0.6\r\n\
                                 Accept-Encoding: identity\r\n\
                                 connection: close\r\n\
-                                User-Agent: imperio/1.0\r\n\r\n", self.page, self.address);
+                                User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)\r\n\r\n", self.page, self.address);
                 match sock.write(t.into_bytes()) {
                     Err(_) => fail!("Couldn't send message"),
                     Ok(_) => {
                         let mut stream = BufferedReader::with_capacity(1, sock.clone());
-                        let response = stream.read_line().unwrap();
+                        let response = stream.read_line().ok().expect("read line failed when getting data");
 
                         let segs = response.splitn(' ', 2).collect::<Vec<&str>>();
 
@@ -63,7 +64,7 @@ impl HttpSender {
                         let mut headers = HashMap::new();
 
                         loop {
-                            let line = stream.read_line().unwrap();
+                            let line = stream.read_line().ok().expect("read line failed in headers read");
 
                             let segs = line.splitn(':', 1).collect::<Vec<&str>>();
                             if segs.len() == 2 {
@@ -77,8 +78,9 @@ impl HttpSender {
                                 fail!("error on this line: {}\n", line);
                             }
                         }
+                        let tmp = StrBuf::from_utf8(stream.read_to_end().ok().expect("read to end failed")).expect("from utf8 failed");
 
-                        ResponseData{body: stream.read_to_str().unwrap().to_owned(), headers: headers,
+                        ResponseData{body: tmp.into_owned(), headers: headers,
                             version: version.to_owned(), status: status.to_owned(), reason: reason.to_owned()}
                     }
                 }
@@ -88,7 +90,26 @@ impl HttpSender {
 }
 
 fn main() {
-    let h = HttpSender{address: "www.guillaume-gomez.fr".to_owned(), page: "/".to_owned(), port: 80};
+    let mut server;
+    let mut page = ~"/";
+
+    match os::args().as_slice() {
+        [_, ref a2] => {
+            server = a2.to_owned();
+        },
+        [_, ref a2, ref a3] => {
+            if page == ~"" {
+                fail!("page cannot be empty");
+            }
+            server = a2.to_owned();
+            page = a3.to_owned();
+        },
+        _ => {
+            fail!("USAGE: ./program server_name [page -> optional]\n")
+        },
+    }
+    
+    let h = HttpSender{address: server, page: page, port: 80};
     let response = h.sendRequest("");
 
     println!("Response from server:");
