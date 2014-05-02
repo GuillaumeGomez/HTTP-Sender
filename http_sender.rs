@@ -52,9 +52,9 @@ impl HttpSender {
                         let segs = response.splitn(' ', 2).collect::<Vec<&str>>();
 
                         let version = match *segs.get(0) {
-                            "HTTP/1.1"                  => "HTTP 1.1",
-                            "HTTP/1.0"                  => "HTTP 1.0",
-                            v if v.starts_with("HTTP/") => "HTTP 1.0",
+                            "HTTP/1.1"                  => "1.1",
+                            "HTTP/1.0"                  => "1.0",
+                            v if v.starts_with("HTTP/") => "1.0",
                             _                           => fail!("unsupported HTTP version")
                         };
                         let status = segs.get(1);
@@ -92,7 +92,7 @@ fn main() {
     let response = h.sendRequest("");
 
     println!("Response from server:");
-    println!("HTTP/{} {} {}\n\n", response.version, response.reason, response.status);
+    println!("HTTP/{} {} {}\n", response.version, response.reason, response.status);
     for (v, k) in response.headers.iter() {
         println!("{}: {}", v, k);
     }
