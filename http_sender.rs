@@ -1,3 +1,8 @@
+#![crate_id = "http_sender#0.1"]
+#![crate_type = "lib"]
+
+#![allow(dead_code)]
+
 extern crate collections;
 
 use std::io::TcpStream;
@@ -6,17 +11,16 @@ use std::io::net::addrinfo::get_host_addresses;
 use std::io::net::ip::SocketAddr;
 use std::io::BufferedReader;
 use collections::HashMap;
-use std::os;
 
-struct ResponseData {
-    headers: HashMap<~str, Vec<~str>>,
-    version: ~str,
-    status: ~str,
-    reason: ~str,
-    body: ~str,
+pub struct ResponseData {
+    pub headers: HashMap<~str, Vec<~str>>,
+    pub version: ~str,
+    pub status: ~str,
+    pub reason: ~str,
+    pub body: ~str,
 }
 
-struct HttpSender {
+pub struct HttpSender {
     address: ~str,
     page: ~str,
     port: u16,
@@ -24,7 +28,7 @@ struct HttpSender {
 }
 
 impl HttpSender {
-    fn new(server_address: &str, page: &str) -> HttpSender {
+    pub fn new(server_address: &str, page: &str) -> HttpSender {
         HttpSender{address: server_address.to_owned(), page: page.to_owned(), port: 80, socket: None}
     }
 
@@ -38,7 +42,7 @@ impl HttpSender {
                 User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)\r\n\r\n", self.page, self.address)
     }
 
-    fn getResponse(&self) -> Result<ResponseData, ~str> {
+    pub fn getResponse(&self) -> Result<ResponseData, ~str> {
         let mut stream;
 
         match self.socket {
@@ -97,7 +101,7 @@ impl HttpSender {
         }
     }
 
-    fn sendRequest(& mut self, message : &str) -> Result<(), ~str> {
+    pub fn sendRequest(& mut self, message : &str) -> Result<(), ~str> {
         let addr;
         match get_host_addresses(self.address) {
             Err(_) => return Err("Couldn't find host address".to_owned()),
@@ -115,42 +119,5 @@ impl HttpSender {
         } else {
             Err("Couldn't send message".to_owned())
         }
-    }
-}
-
-fn main() {
-    let mut server;
-    let mut page = ~"/";
-
-    match os::args().as_slice() {
-        [_, ref a2] => {
-            server = a2.to_owned();
-        },
-        [_, ref a2, ref a3] => {
-            if page == ~"" {
-                fail!("page cannot be empty");
-            }
-            server = a2.to_owned();
-            page = a3.to_owned();
-        },
-        _ => {
-            fail!("USAGE: ./program server_name [page -> optional]\n")
-        },
-    }
-    
-    let mut h = HttpSender::new(server, page);
-    match h.sendRequest("") {
-        Err(e) => println!("Error: {}", e),
-        Ok(_) => match h.getResponse() {
-            Err(e) => println!("Error: {}", e),
-            Ok(response) => {
-                println!("Response from server:");
-                println!("HTTP/{} {} {}\n", response.version, response.reason, response.status);
-                for (v, k) in response.headers.iter() {
-                    println!("{}: {}", v, k);
-                }
-                println!("\n{}", response.body)
-            },
-        },
     }
 }
