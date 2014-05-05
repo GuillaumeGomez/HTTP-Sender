@@ -4,13 +4,44 @@
 #![allow(dead_code)]
 
 extern crate collections;
+extern crate libc;
 
 use std::io::TcpStream;
 use std::io::TcpStream::connect;
 use std::io::net::addrinfo::get_host_addresses;
 use std::io::net::ip::SocketAddr;
 use std::io::BufferedReader;
+use std::io::IoResult;
 use collections::HashMap;
+use gzip_reader::GzipReader;
+use std::slice;
+
+mod gzip_reader;
+
+struct MyReader {
+    data: Vec<u8>,
+    start: uint,
+}
+
+impl Reader for MyReader {
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
+        println!("size: {} / {}", buf.len(), self.data.len());
+        let tmp = if self.data.len() - self.start > buf.len() {
+                    println!("if -> {}", buf.len())
+                    buf.len()
+                } else {
+                    println!("else -> {}", self.data.len() - self.start)
+                    self.data.len() - self.start
+                };
+        if tmp == 0 {
+            Ok(0)
+        } else {
+            slice::bytes::copy_memory(buf, self.data.slice(self.start, tmp));
+            self.start = tmp;
+            Ok(tmp)
+        }
+    }
+}
 
 pub struct ResponseData {
     pub headers: HashMap<~str, Vec<~str>>,
@@ -35,9 +66,9 @@ impl HttpSender {
     fn createHeader(&self) -> ~str {
         format!("GET {} HTTP/1.1\r\n\
                 Host: {}\r\n\
-                Accept: text/plain,text/html,*/*\r\n\
+                Accept: text/plain,text/html,application/rss+xml,*/*\r\n\
                 Accept-Language: fr,en-US;q=0.8,en;q=0.6\r\n\
-                Accept-Encoding: identity\r\n\
+                Accept-Encoding: gzip,deflate\r\n\
                 connection: close\r\n\
                 User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)\r\n\r\n", self.page, self.address)
     }
@@ -91,17 +122,42 @@ impl HttpSender {
                 return Err(line.to_owned());
             }
         }
+        
+        let mut gzip = false;
+        for (v, k) in headers.iter() {
+            println!("{}: {}", v, k);
+        }
+        for (v, k) in headers.iter() {
+            if v == &("Content-Encoding".to_owned()) {
+                if k.contains(&("gzip".to_owned())) {
+                    gzip = true;
+                }
+                break;
+            }
+        }
+
         match stream.read_to_end() {
             Err(_) => return Err("Couldn't read body".to_owned()),
-            Ok(l) => match StrBuf::from_utf8(l) {
-                                None => Err("Couldn't convert body to UTF-8".to_owned()),
-                                Some(tmp) => Ok(ResponseData{body: tmp.into_owned(), headers: headers,
-                                            version: version.to_owned(), status: status.to_owned(), reason: reason.to_owned()}),
+            Ok(l) => {
+                if gzip == true {
+                    let mut r = GzipReader{inner: l};
+                    match r.decode() {
+                        Ok(res) => Ok(ResponseData{body: res.to_owned(), headers: headers,
+                                    version: version.to_owned(), status: status.to_owned(), reason: reason.to_owned()}),
+                        Err(res) => Err(res.to_owned()),
+                    }
+                } else {
+                    match StrBuf::from_utf8(l) {
+                        None => Err("Couldn't convert body to UTF-8".to_owned()),
+                        Some(tmp) => Ok(ResponseData{body: tmp.into_owned(), headers: headers,
+                                        version: version.to_owned(), status: status.to_owned(), reason: reason.to_owned()}),
+                    }
+                }
             },
         }
     }
 
-    pub fn sendRequest(& mut self, message : &str) -> Result<(), ~str> {
+    pub fn sendRequest(& mut self) -> Result<(), ~str> {
         let addr;
         match get_host_addresses(self.address) {
             Err(_) => return Err("Couldn't find host address".to_owned()),

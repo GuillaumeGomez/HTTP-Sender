@@ -2,7 +2,7 @@
 
 extern crate http_sender;
 
-use http_sender::{HttpSender, ResponseData};
+use http_sender::{HttpSender};
 use std::os;
 
 fn main() {
@@ -26,7 +26,7 @@ fn main() {
     }
     
     let mut h = HttpSender::new(server, page);
-    match h.sendRequest("") {
+    match h.sendRequest() {
         Err(e) => println!("Error: {}", e),
         Ok(_) => match h.getResponse() {
             Err(e) => println!("Error: {}", e),
