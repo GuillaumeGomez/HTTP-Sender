@@ -1,7 +1,7 @@
 HTTP-Sender
 ===========
 
-A little HTTP request sender in rust.
+A little HTTP request sender in rust. An example is provided in main.rs.
 
 ##License
 
