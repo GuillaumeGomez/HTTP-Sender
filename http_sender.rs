@@ -11,34 +11,88 @@ use std::io::TcpStream::connect;
 use std::io::net::addrinfo::get_host_addresses;
 use std::io::net::ip::SocketAddr;
 use std::io::BufferedReader;
-use std::io::IoResult;
 use collections::HashMap;
 use gzip_reader::GzipReader;
-use std::slice;
+use std::ascii::OwnedStrAsciiExt;
+use std::num::from_str_radix;
+use std::strbuf::StrBuf;
 
 mod gzip_reader;
 
-struct MyReader {
+struct ChunkReader {
     data: Vec<u8>,
-    start: uint,
 }
 
-impl Reader for MyReader {
-    fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
-        println!("size: {} / {}", buf.len(), self.data.len());
-        let tmp = if self.data.len() - self.start > buf.len() {
-                    println!("if -> {}", buf.len())
-                    buf.len()
-                } else {
-                    println!("else -> {}", self.data.len() - self.start)
-                    self.data.len() - self.start
-                };
-        if tmp == 0 {
-            Ok(0)
+impl ChunkReader {
+    fn new(v : &Vec<u8>) -> ChunkReader {
+        ChunkReader{data: v.clone()}
+    }
+    fn readFromChunk(&self) -> Result<(uint, uint), ~str> {
+        let mut line = StrBuf::new();
+        static MAXNUM_SIZE : uint = 16;
+        static HEX_CHARS : &'static [u8] = bytes!("0123456789abcdefABCDEF");
+        let mut is_in_chunk_extension = false;
+        let mut pos = 0;
+
+        if self.data.len() > 1 && self.data.get(0) == &0u8 && self.data.get(1) == &0u8 {
+            return Ok((0, self.data.len() - 1));
+        }
+        while pos < self.data.len() {
+            match *self.data.get(pos) as char {
+                '\r' => { // '\r'
+                    pos += 1;
+                    if pos >= self.data.len() || self.data.get(pos) != &0x0au8 {
+                        return Err("Error with '\r'".to_owned());
+                    }
+                    break;
+                }
+                '\n' => break,
+                _ if is_in_chunk_extension => {
+                    pos += 1;
+                    continue;
+                }
+                ';' => {is_in_chunk_extension = true;}
+                c if HEX_CHARS.contains(&(c as u8)) => {
+                    line.push_char(c);
+                    pos += 1;
+                }
+                _ => {
+                    println!("{}", self.data);
+                    return Err("Chunk format error".to_owned())}
+                ,
+            }
+        }
+
+        if line.len() > MAXNUM_SIZE {
+            return Err("http chunk transfer encoding format: size line too long".to_owned());
+        }
+        match from_str_radix(line.as_slice(), 16) {
+            Some(v) => Ok((v, pos + 1)),
+            None => Ok((0, 0)),
+        }
+    }
+
+    fn readNext(&mut self) -> Result<(Vec<u8>, uint), ~str> {
+        let mut out = Vec::new();
+
+        if self.data.len() > 0 {
+            match self.readFromChunk() {
+                Ok((toWrite, toSkip)) => {
+                    if toWrite == 0 {
+                        return Ok((out.clone(), 0));
+                    }
+                    let mut tmp_v = self.data.clone().move_iter().skip(toSkip).collect::<Vec<u8>>();
+
+                    tmp_v.truncate(toWrite);
+
+                    out.push_all_move(tmp_v);
+                    self.data = self.data.clone().move_iter().skip(toSkip + toWrite).collect::<Vec<u8>>();
+                    Ok((out.clone(), self.data.len()))
+                }
+                Err(e) => Err(e),
+            }
         } else {
-            slice::bytes::copy_memory(buf, self.data.slice(self.start, tmp));
-            self.start = tmp;
-            Ok(tmp)
+            Ok((out.clone(), 0))
         }
     }
 }
@@ -71,6 +125,51 @@ impl HttpSender {
                 Accept-Encoding: gzip,deflate\r\n\
                 connection: close\r\n\
                 User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)\r\n\r\n", self.page, self.address)
+    }
+
+    fn fromGzip(&self, v: Vec<u8>) -> Result<~str, ~str> {
+        let mut r = GzipReader{inner: v};
+        match r.decode() {
+            Ok(res) => Ok(res),
+            Err(res) => Err(res.to_owned()),
+        }
+    }
+
+    fn fromUtf8(&self, v: Vec<u8>) -> Result<~str, ~str> {
+        match StrBuf::from_utf8(v) {
+            None => Err("Couldn't convert body to UTF-8".to_owned()),
+            Some(tmp) => Ok(tmp.to_str()),
+        }
+    }
+
+    fn readAllChunked(&self, mut cr : ChunkReader, gzip : bool, mut out : StrBuf) -> Result<~str, ~str> {
+        match cr.readNext() {
+            Err(res) => Err(res.to_owned()),
+            Ok((res, size)) => {
+                if size > 0 {
+                    match if gzip == true {
+                        self.fromGzip(res)
+                    } else {
+                        self.fromUtf8(res)
+                    } {
+                        Ok(s) => {
+                            out.push_str(s);
+                            self.readAllChunked(cr, gzip, out)
+                        }
+                        Err(e) => Err(e.to_owned()),
+                    }
+                } else {
+                    Ok(out.into_owned())
+                }
+            }
+        }
+    }
+
+    fn fromChunked(&self, v: Vec<u8>, gzip: bool) -> Result<~str, ~str> {
+        let cr = ChunkReader::new(&v);
+        let out = StrBuf::new();
+
+        self.readAllChunked(cr, gzip, out)
     }
 
     pub fn getResponse(&self) -> Result<ResponseData, ~str> {
@@ -124,34 +223,33 @@ impl HttpSender {
         }
         
         let mut gzip = false;
+        let mut chunked = false;
         for (v, k) in headers.iter() {
-            println!("{}: {}", v, k);
-        }
-        for (v, k) in headers.iter() {
-            if v == &("Content-Encoding".to_owned()) {
+            let tmp_s = v.clone().into_ascii_lower();
+            if tmp_s == "content-encoding".to_owned() {
                 if k.contains(&("gzip".to_owned())) {
                     gzip = true;
                 }
-                break;
+            } else if tmp_s == "transfer-encoding".to_owned() {
+                if k.contains(&("chunked".to_owned())) {
+                    chunked = true;
+                }
             }
         }
 
         match stream.read_to_end() {
             Err(_) => return Err("Couldn't read body".to_owned()),
             Ok(l) => {
-                if gzip == true {
-                    let mut r = GzipReader{inner: l};
-                    match r.decode() {
-                        Ok(res) => Ok(ResponseData{body: res.to_owned(), headers: headers,
-                                    version: version.to_owned(), status: status.to_owned(), reason: reason.to_owned()}),
-                        Err(res) => Err(res.to_owned()),
-                    }
+                match if chunked == true {
+                    self.fromChunked(l, gzip)
+                } else if gzip == true {
+                    self.fromGzip(l)
                 } else {
-                    match StrBuf::from_utf8(l) {
-                        None => Err("Couldn't convert body to UTF-8".to_owned()),
-                        Some(tmp) => Ok(ResponseData{body: tmp.into_owned(), headers: headers,
-                                        version: version.to_owned(), status: status.to_owned(), reason: reason.to_owned()}),
-                    }
+                    self.fromUtf8(l)
+                } {
+                   Err(e) => Err(e),
+                   Ok(r) => Ok(ResponseData{body: r.into_owned(), headers: headers,
+                            version: version.to_owned(), status: status.to_owned(), reason: reason.to_owned()}),
                 }
             },
         }
