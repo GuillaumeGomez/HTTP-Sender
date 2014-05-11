@@ -149,9 +149,7 @@ extern "C" {
     pub fn crc32_combine(arg1: c_ulong, arg2: c_ulong, arg3: off_t) -> c_ulong;
     pub fn zError(arg1: c_int) -> *c_char;
     pub fn inflateSyncPoint(arg1: z_streamp) -> c_int;
-    // pub fn get_crc_table() -> *z_crc_t;
     pub fn inflateUndermine(arg1: z_streamp, arg2: c_int) -> c_int;
     pub fn inflateResetKeep(arg1: z_streamp) -> c_int;
     pub fn deflateResetKeep(arg1: z_streamp) -> c_int;
-    // pub fn gzvprintf(file: gzFile, format: *c_char, va: va_list) -> c_int;
 }

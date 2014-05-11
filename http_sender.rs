@@ -27,7 +27,7 @@ impl ChunkReader {
     fn new(v : &Vec<u8>) -> ChunkReader {
         ChunkReader{data: v.clone()}
     }
-    fn readFromChunk(&self) -> Result<(uint, uint), ~str> {
+    fn read_from_chunk(&self) -> Result<(uint, uint), ~str> {
         let mut line = StrBuf::new();
         static MAXNUM_SIZE : uint = 16;
         static HEX_CHARS : &'static [u8] = bytes!("0123456789abcdefABCDEF");
@@ -59,7 +59,6 @@ impl ChunkReader {
                 _ => {
                     println!("{}", self.data);
                     return Err("Chunk format error".to_owned())}
-                ,
             }
         }
 
@@ -72,21 +71,21 @@ impl ChunkReader {
         }
     }
 
-    fn readNext(&mut self) -> Result<(Vec<u8>, uint), ~str> {
+    fn read_next(&mut self) -> Result<(Vec<u8>, uint), ~str> {
         let mut out = Vec::new();
 
         if self.data.len() > 0 {
-            match self.readFromChunk() {
-                Ok((toWrite, toSkip)) => {
-                    if toWrite == 0 {
+            match self.read_from_chunk() {
+                Ok((to_write, to_skip)) => {
+                    if to_write == 0 {
                         return Ok((out.clone(), 0));
                     }
-                    let mut tmp_v = self.data.clone().move_iter().skip(toSkip).collect::<Vec<u8>>();
+                    let mut tmp_v = self.data.clone().move_iter().skip(to_skip).collect::<Vec<u8>>();
 
-                    tmp_v.truncate(toWrite);
+                    tmp_v.truncate(to_write);
 
                     out.push_all_move(tmp_v);
-                    self.data = self.data.clone().move_iter().skip(toSkip + toWrite).collect::<Vec<u8>>();
+                    self.data = self.data.clone().move_iter().skip(to_skip + to_write).collect::<Vec<u8>>();
                     Ok((out.clone(), self.data.len()))
                 }
                 Err(e) => Err(e),
@@ -110,51 +109,133 @@ pub struct HttpSender {
     page: ~str,
     port: u16,
     socket: Option<TcpStream>,
+    args: HashMap<~str, Vec<~str>>,
+    request_type: ~str,
+    user_agent: ~str,
 }
 
 impl HttpSender {
+    // same as HttpSender::create_request(address, page, GET)
     pub fn new(server_address: &str, page: &str) -> HttpSender {
-        HttpSender{address: server_address.to_owned(), page: page.to_owned(), port: 80, socket: None}
+        HttpSender{address: server_address.to_owned(), page: page.to_owned(), port: 80, socket: None,
+            args: HashMap::new(), request_type: "GET".to_owned(), user_agent: "imperio-test/0.1".to_owned()}
     }
 
-    fn createHeader(&self) -> ~str {
-        format!("GET {} HTTP/1.1\r\n\
+    pub fn create_request(server_address : &str, page: &str, request_method : &str) -> HttpSender {
+        let requests = ["GET", "HEAD", "PUT", "POST"];
+
+        if requests.contains(&request_method.clone()) {
+            HttpSender{address: server_address.to_owned(), page: page.to_owned(), port: 80, socket: None,
+                        args: HashMap::new(), request_type: request_method.to_owned(),
+                        user_agent: "imperio-test/0.1".to_owned()}
+        } else {
+            HttpSender{address: server_address.to_owned(), page: page.to_owned(), port: 80, socket: None,
+                        args: HashMap::new(), request_type: "GET".to_owned(),
+                        user_agent: "imperio-test/0.1".to_owned()}
+        }
+    }
+
+    pub fn add_argument(mut self, key: &str, value: &str) -> HttpSender {
+        let c_v = value.to_owned();
+        self.args.insert_or_update_with(key.to_owned(),
+                                        vec!(value.to_owned()),
+                                        |ref _k, v| v.push(c_v.to_owned()));
+        self
+    }
+
+    pub fn add_arguments(mut self, arguments: Vec<(~str, ~str)>) -> HttpSender {
+        for &(ref k, ref v) in arguments.iter() {
+            let t_k = k.clone();
+            let c_v = v.to_owned();
+            self.args.insert_or_update_with(t_k.to_owned(),
+                                        vec!(v.to_owned()),
+                                        |ref _k, v| v.push(c_v.to_owned()));
+        }
+        self
+    }
+
+    fn create_simple_header(&self, args : StrBuf) -> ~str {
+        let mut t_args = args.clone();
+
+        if t_args.len() > 0 {
+            let tmp = t_args.into_owned();
+
+            t_args = StrBuf::new();
+            t_args.push_str("?".to_owned());
+            t_args.push_str(tmp);
+        }
+
+        format!("{} {}{} HTTP/1.1\r\n\
                 Host: {}\r\n\
                 Accept: text/plain,text/html,application/rss+xml,*/*\r\n\
                 Accept-Language: fr,en-US;q=0.8,en;q=0.6\r\n\
                 Accept-Encoding: gzip,deflate\r\n\
                 connection: close\r\n\
-                User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)\r\n\r\n", self.page, self.address)
+                User-Agent: {}\r\n\r\n", self.request_type, self.page, t_args.into_owned(), self.address, self.user_agent)
     }
 
-    fn fromGzip(&self, v: Vec<u8>) -> Result<~str, ~str> {
-        let mut r = GzipReader{inner: v};
-        match r.decode() {
+    fn create_header_with_args(&self, args : StrBuf) -> ~str {
+        format!("{} {} HTTP/1.1\r\n\
+                Host: {}\r\n\
+                Accept: text/plain,text/html,application/rss+xml,*/*\r\n\
+                Accept-Language: fr,en-US;q=0.8,en;q=0.6\r\n\
+                Accept-Encoding: gzip,deflate\r\n\
+                connection: close\r\n\
+                User-Agent: {}\r\n\
+                Content-Type: application/x-www-form-urlencoded\r\n\
+                Content-Length: {}\r\n\r\n{}\r\n", self.request_type, self.page, self.address, self.user_agent, args.len(), args.into_owned())
+    }
+
+    fn create_header(&self) -> ~str {
+        let mut args = StrBuf::new();
+
+        for (tmp, v) in self.args.iter() {
+            for in_tmp in v.iter() {
+                if args.len() > 0 {
+                    args.push_str("&".to_owned());
+                }
+                args.push_str(tmp.to_owned());
+                args.push_str("=".to_owned());
+                args.push_str(in_tmp.to_owned());
+            }
+        }
+
+        if self.request_type == "GET".to_owned() || self.request_type == "HEAD".to_owned() {
+            let tmp = self.create_simple_header(args.clone());
+            println!("req : {}", tmp);
+            tmp
+        } else {
+            self.create_header_with_args(args.clone())
+        }
+    }
+
+    fn from_gzip(&self, v: Vec<u8>) -> Result<~str, ~str> {
+        match GzipReader{inner: v}.decode() {
             Ok(res) => Ok(res),
             Err(res) => Err(res.to_owned()),
         }
     }
 
-    fn fromUtf8(&self, v: Vec<u8>) -> Result<~str, ~str> {
+    fn from_utf8(&self, v: Vec<u8>) -> Result<~str, ~str> {
         match StrBuf::from_utf8(v) {
             None => Err("Couldn't convert body to UTF-8".to_owned()),
             Some(tmp) => Ok(tmp.to_str()),
         }
     }
 
-    fn readAllChunked(&self, mut cr : ChunkReader, gzip : bool, mut out : StrBuf) -> Result<~str, ~str> {
-        match cr.readNext() {
+    fn read_all_chunked(&self, mut cr : ChunkReader, gzip : bool, mut out : StrBuf) -> Result<~str, ~str> {
+        match cr.read_next() {
             Err(res) => Err(res.to_owned()),
             Ok((res, size)) => {
                 if size > 0 {
                     match if gzip == true {
-                        self.fromGzip(res)
+                        self.from_gzip(res)
                     } else {
-                        self.fromUtf8(res)
+                        self.from_utf8(res)
                     } {
                         Ok(s) => {
                             out.push_str(s);
-                            self.readAllChunked(cr, gzip, out)
+                            self.read_all_chunked(cr, gzip, out)
                         }
                         Err(e) => Err(e.to_owned()),
                     }
@@ -165,34 +246,24 @@ impl HttpSender {
         }
     }
 
-    fn fromChunked(&self, v: Vec<u8>, gzip: bool) -> Result<~str, ~str> {
-        let cr = ChunkReader::new(&v);
-        let out = StrBuf::new();
-
-        self.readAllChunked(cr, gzip, out)
+    fn from_chunked(&self, v: Vec<u8>, gzip: bool) -> Result<~str, ~str> {
+        self.read_all_chunked(ChunkReader::new(&v), gzip, StrBuf::new())
     }
 
-    pub fn getResponse(&self) -> Result<ResponseData, ~str> {
-        let mut stream;
-
-        match self.socket {
+    pub fn get_response(&self) -> Result<ResponseData, ~str> {
+        let mut stream = match self.socket {
             None => return Err("Not connected to server".to_owned()),
-            Some(ref e) => stream = BufferedReader::with_capacity(1, e.clone()),
-        }
-        let response;
-
-        match stream.read_line() {
+            Some(ref e) => BufferedReader::with_capacity(1, e.clone()),
+        };
+        let response = match stream.read_line() {
             Err(_) => return Err("read line failed when getting data".to_owned()),
-            Ok(l) => response = l,
-        }
-
+            Ok(l) => l,
+        };
         let segs = response.splitn(' ', 2).collect::<Vec<&str>>();
-
-        let version;
-        match *segs.get(0) {
-            "HTTP/1.1" => version = "1.1",
-            "HTTP/1.0" => version = "1.0",
-            v if v.starts_with("HTTP/") => version = "1.0",
+        let version = match *segs.get(0) {
+            "HTTP/1.1" => "1.1",
+            "HTTP/1.0" => "1.0",
+            v if v.starts_with("HTTP/") => "1.0",
             _ => return Err("Unsupported HTTP version".to_owned()),
         };
 
@@ -202,12 +273,10 @@ impl HttpSender {
         let mut headers = HashMap::new();
 
         loop {
-            let line;
-
-            match stream.read_line() {
+            let line = match stream.read_line() {
                 Err(_) => return Err("Errow while reading header".to_owned()),
-                Ok(l) => line = l,
-            }
+                Ok(l) => l,
+            };
 
             let segs = line.splitn(':', 1).collect::<Vec<&str>>();
             if segs.len() == 2 {
@@ -241,11 +310,11 @@ impl HttpSender {
             Err(_) => return Err("Couldn't read body".to_owned()),
             Ok(l) => {
                 match if chunked == true {
-                    self.fromChunked(l, gzip)
+                    self.from_chunked(l, gzip)
                 } else if gzip == true {
-                    self.fromGzip(l)
+                    self.from_gzip(l)
                 } else {
-                    self.fromUtf8(l)
+                    self.from_utf8(l)
                 } {
                    Err(e) => Err(e),
                    Ok(r) => Ok(ResponseData{body: r.into_owned(), headers: headers,
@@ -255,17 +324,16 @@ impl HttpSender {
         }
     }
 
-    pub fn sendRequest(& mut self) -> Result<(), ~str> {
-        let addr;
-        match get_host_addresses(self.address) {
+    pub fn send_request(& mut self) -> Result<(), ~str> {
+        let addr = match get_host_addresses(self.address) {
             Err(_) => return Err("Couldn't find host address".to_owned()),
-            Ok(ret) => addr = ret,
+            Ok(ret) => ret,
         };
 
         addr.iter().skip_while(|&a| {
             self.socket = TcpStream::connect(SocketAddr{ip: *a, port: 80}).ok(); self.socket.is_none()}).next();
         if self.socket.is_some() {
-            let t = self.createHeader();
+            let t = self.create_header();
             match self.socket.get_mut_ref().write(t.into_bytes()) {
                 Err(_) => Err("Couldn't send message".to_owned()),
                 Ok(_) => Ok(()),
