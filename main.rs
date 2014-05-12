@@ -7,7 +7,7 @@ use std::os;
 
 fn main() {
     let mut server;
-    let mut page = ~"/";
+    let mut page = "/".to_owned();
 
     let tmp = os::args();
     let args = tmp.tail();
@@ -24,14 +24,14 @@ fn main() {
         [ref a2, ref a3] => {
             server = a2.to_owned();
             page = a3.to_owned();
-            if page == ~"" {
+            if page == "".to_owned() {
                 fail!("page cannot be empty");
             }
         },
         _ => {
             server = args.get(0).unwrap().to_owned();
             page = args.get(1).unwrap().to_owned();
-            if page == ~"" {
+            if page == "".to_owned() {
                 fail!("page cannot be empty");
             }
             for tmp in args.tailn(2).iter() {

@@ -115,7 +115,7 @@ pub struct HttpSender {
 }
 
 impl HttpSender {
-    // same as HttpSender::create_request(address, page, GET)
+    // same as HttpSender::create_request(address, page, "GET")
     pub fn new(server_address: &str, page: &str) -> HttpSender {
         HttpSender{address: server_address.to_owned(), page: page.to_owned(), port: 80, socket: None,
             args: HashMap::new(), request_type: "GET".to_owned(), user_agent: "imperio-test/0.1".to_owned()}
@@ -284,7 +284,7 @@ impl HttpSender {
                 let v = segs.get(1).trim();
                 headers.insert_or_update_with(k.to_owned(), vec!(v.into_owned()), |_k, ov| ov.push(v.into_owned()));
             } else {
-                if [~"\r\n", ~"\n", ~""].contains(&line) {
+                if ["\r\n".to_owned(), "\n".to_owned(), "".to_owned()].contains(&line) {
                     break;
                 }
                 return Err(line.to_owned());

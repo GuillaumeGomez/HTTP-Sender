@@ -1,5 +1,5 @@
 use libc::{c_int};
-use std::cast;
+use std::mem;
 use std::vec::Vec;
 use std::mem::{size_of, init};
 
@@ -41,7 +41,7 @@ impl GzipReader {
                 if strm.total_out as uint >= tmp_ret.len() {
                     tmp_ret = tmp_ret.append(Vec::from_elem(self.inner.len(), 0u8).as_slice());
                 }
-                strm.next_out = unsafe {cast::transmute(&tmp_ret.as_mut_slice()[strm.total_out as uint])};
+                strm.next_out = unsafe {mem::transmute(&tmp_ret.as_mut_slice()[strm.total_out as uint])};
                 strm.avail_out = (tmp_ret.len() - strm.total_out as uint) as u32;
 
                 match unsafe {zlib::inflate(&mut strm, Z_SYNC_FLUSH)} {
