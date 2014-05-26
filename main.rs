@@ -35,7 +35,7 @@ fn main() {
                 fail!("page cannot be empty");
             }
             for tmp in args.tailn(2).iter() {
-                let segs = tmp.splitn('=', 1).collect::<Vec<&str>>();
+                let segs = tmp.as_slice().splitn('=', 1).collect::<Vec<&str>>();
                 if segs.len() == 2 {
                     values.push((segs.get(0).trim().to_owned(), segs.get(1).trim().to_owned()));
                 }
@@ -44,9 +44,9 @@ fn main() {
     }
     
     let mut h = if values.len() == 0 {
-        HttpSender::new(server, page)
+        HttpSender::new(server.as_slice(), page.as_slice())
     } else {
-        HttpSender::create_request(server, page, "POST").add_arguments(values)
+        HttpSender::create_request(server.as_slice(), page.as_slice(), "POST").add_arguments(values)
     };
     match h.send_request() {
         Err(e) => println!("Error: {}", e),

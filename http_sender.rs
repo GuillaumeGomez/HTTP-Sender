@@ -2,6 +2,7 @@
 #![crate_type = "lib"]
 
 #![allow(dead_code)]
+#![feature(globs)]
 
 extern crate collections;
 extern crate libc;
@@ -15,9 +16,9 @@ use collections::HashMap;
 use gzip_reader::GzipReader;
 use std::ascii::OwnedStrAsciiExt;
 use std::num::from_str_radix;
-use std::strbuf::StrBuf;
 
 mod gzip_reader;
+mod zlib;
 
 struct ChunkReader {
     data: Vec<u8>,
@@ -27,8 +28,8 @@ impl ChunkReader {
     fn new(v : &Vec<u8>) -> ChunkReader {
         ChunkReader{data: v.clone()}
     }
-    fn read_from_chunk(&self) -> Result<(uint, uint), ~str> {
-        let mut line = StrBuf::new();
+    fn read_from_chunk(&self) -> Result<(uint, uint), String> {
+        let mut line = String::new();
         static MAXNUM_SIZE : uint = 16;
         static HEX_CHARS : &'static [u8] = bytes!("0123456789abcdefABCDEF");
         let mut is_in_chunk_extension = false;
@@ -71,7 +72,7 @@ impl ChunkReader {
         }
     }
 
-    fn read_next(&mut self) -> Result<(Vec<u8>, uint), ~str> {
+    fn read_next(&mut self) -> Result<(Vec<u8>, uint), String> {
         let mut out = Vec::new();
 
         if self.data.len() > 0 {
@@ -97,21 +98,21 @@ impl ChunkReader {
 }
 
 pub struct ResponseData {
-    pub headers: HashMap<~str, Vec<~str>>,
-    pub version: ~str,
-    pub status: ~str,
-    pub reason: ~str,
-    pub body: ~str,
+    pub headers: HashMap<String, Vec<String>>,
+    pub version: String,
+    pub status: String,
+    pub reason: String,
+    pub body: String,
 }
 
 pub struct HttpSender {
-    address: ~str,
-    page: ~str,
+    address: String,
+    page: String,
     port: u16,
     socket: Option<TcpStream>,
-    args: HashMap<~str, Vec<~str>>,
-    request_type: ~str,
-    user_agent: ~str,
+    args: HashMap<String, Vec<String>>,
+    request_type: String,
+    user_agent: String,
 }
 
 impl HttpSender {
@@ -143,7 +144,7 @@ impl HttpSender {
         self
     }
 
-    pub fn add_arguments(mut self, arguments: Vec<(~str, ~str)>) -> HttpSender {
+    pub fn add_arguments(mut self, arguments: Vec<(String, String)>) -> HttpSender {
         for &(ref k, ref v) in arguments.iter() {
             let t_k = k.clone();
             let c_v = v.to_owned();
@@ -154,15 +155,15 @@ impl HttpSender {
         self
     }
 
-    fn create_simple_header(&self, args : StrBuf) -> ~str {
+    fn create_simple_header(&self, args : String) -> String {
         let mut t_args = args.clone();
 
         if t_args.len() > 0 {
             let tmp = t_args.into_owned();
 
-            t_args = StrBuf::new();
-            t_args.push_str("?".to_owned());
-            t_args.push_str(tmp);
+            t_args = String::new();
+            t_args.push_str("?");
+            t_args.push_str(tmp.as_slice());
         }
 
         format!("{} {}{} HTTP/1.1\r\n\
@@ -174,7 +175,7 @@ impl HttpSender {
                 User-Agent: {}\r\n\r\n", self.request_type, self.page, t_args.into_owned(), self.address, self.user_agent)
     }
 
-    fn create_header_with_args(&self, args : StrBuf) -> ~str {
+    fn create_header_with_args(&self, args : String) -> String {
         format!("{} {} HTTP/1.1\r\n\
                 Host: {}\r\n\
                 Accept: text/plain,text/html,application/rss+xml,*/*\r\n\
@@ -186,17 +187,17 @@ impl HttpSender {
                 Content-Length: {}\r\n\r\n{}\r\n", self.request_type, self.page, self.address, self.user_agent, args.len(), args.into_owned())
     }
 
-    fn create_header(&self) -> ~str {
-        let mut args = StrBuf::new();
+    fn create_header(&self) -> String {
+        let mut args = String::new();
 
         for (tmp, v) in self.args.iter() {
             for in_tmp in v.iter() {
                 if args.len() > 0 {
-                    args.push_str("&".to_owned());
+                    args.push_str("&");
                 }
-                args.push_str(tmp.to_owned());
-                args.push_str("=".to_owned());
-                args.push_str(in_tmp.to_owned());
+                args.push_str(tmp.as_slice());
+                args.push_str("=");
+                args.push_str(in_tmp.as_slice());
             }
         }
 
@@ -209,21 +210,21 @@ impl HttpSender {
         }
     }
 
-    fn from_gzip(&self, v: Vec<u8>) -> Result<~str, ~str> {
+    fn from_gzip(&self, v: Vec<u8>) -> Result<String, String> {
         match GzipReader{inner: v}.decode() {
             Ok(res) => Ok(res),
             Err(res) => Err(res.to_owned()),
         }
     }
 
-    fn from_utf8(&self, v: Vec<u8>) -> Result<~str, ~str> {
-        match StrBuf::from_utf8(v) {
-            None => Err("Couldn't convert body to UTF-8".to_owned()),
-            Some(tmp) => Ok(tmp.to_str()),
+    fn from_utf8(&self, v: Vec<u8>) -> Result<String, String> {
+        match String::from_utf8(v) {
+            Err(_) => Err(String::from_str("Couldn't convert body to UTF-8")),
+            Ok(tmp) => Ok(tmp),
         }
     }
 
-    fn read_all_chunked(&self, mut cr : ChunkReader, gzip : bool, mut out : StrBuf) -> Result<~str, ~str> {
+    fn read_all_chunked(&self, mut cr : ChunkReader, gzip : bool, mut out : String) -> Result<String, String> {
         match cr.read_next() {
             Err(res) => Err(res.to_owned()),
             Ok((res, size)) => {
@@ -234,7 +235,7 @@ impl HttpSender {
                         self.from_utf8(res)
                     } {
                         Ok(s) => {
-                            out.push_str(s);
+                            out.push_str(s.as_slice());
                             self.read_all_chunked(cr, gzip, out)
                         }
                         Err(e) => Err(e.to_owned()),
@@ -246,11 +247,11 @@ impl HttpSender {
         }
     }
 
-    fn from_chunked(&self, v: Vec<u8>, gzip: bool) -> Result<~str, ~str> {
-        self.read_all_chunked(ChunkReader::new(&v), gzip, StrBuf::new())
+    fn from_chunked(&self, v: Vec<u8>, gzip: bool) -> Result<String, String> {
+        self.read_all_chunked(ChunkReader::new(&v), gzip, String::new())
     }
 
-    pub fn get_response(&self) -> Result<ResponseData, ~str> {
+    pub fn get_response(&self) -> Result<ResponseData, String> {
         let mut stream = match self.socket {
             None => return Err("Not connected to server".to_owned()),
             Some(ref e) => BufferedReader::with_capacity(1, e.clone()),
@@ -259,7 +260,7 @@ impl HttpSender {
             Err(_) => return Err("read line failed when getting data".to_owned()),
             Ok(l) => l,
         };
-        let segs = response.splitn(' ', 2).collect::<Vec<&str>>();
+        let segs = response.as_slice().splitn(' ', 2).collect::<Vec<&str>>();
         let version = match *segs.get(0) {
             "HTTP/1.1" => "1.1",
             "HTTP/1.0" => "1.0",
@@ -278,7 +279,7 @@ impl HttpSender {
                 Ok(l) => l,
             };
 
-            let segs = line.splitn(':', 1).collect::<Vec<&str>>();
+            let segs = line.as_slice().splitn(':', 1).collect::<Vec<&str>>();
             if segs.len() == 2 {
                 let k = segs.get(0).trim();
                 let v = segs.get(1).trim();
@@ -324,17 +325,20 @@ impl HttpSender {
         }
     }
 
-    pub fn send_request(& mut self) -> Result<(), ~str> {
-        let addr = match get_host_addresses(self.address) {
+    pub fn send_request(& mut self) -> Result<(), String> {
+        let addr = match get_host_addresses(self.address.as_slice()) {
             Err(_) => return Err("Couldn't find host address".to_owned()),
             Ok(ret) => ret,
         };
 
         addr.iter().skip_while(|&a| {
-            self.socket = TcpStream::connect(SocketAddr{ip: *a, port: 80}).ok(); self.socket.is_none()}).next();
+            let s_ip = format!("{}", *a);
+
+            println!("ip: {}", s_ip);
+            self.socket = TcpStream::connect(s_ip.as_slice(), 80).ok(); self.socket.is_none()}).next();
         if self.socket.is_some() {
             let t = self.create_header();
-            match self.socket.get_mut_ref().write(t.into_bytes()) {
+            match self.socket.get_mut_ref().write(t.into_bytes().as_slice()) {
                 Err(_) => Err("Couldn't send message".to_owned()),
                 Ok(_) => Ok(()),
             }

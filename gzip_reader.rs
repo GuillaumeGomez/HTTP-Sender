@@ -2,8 +2,7 @@ use libc::{c_int};
 use std::mem;
 use std::vec::Vec;
 use std::mem::{size_of, init};
-
-mod zlib;
+use zlib;
 
 static Z_OK            : c_int = 0;
 static Z_STREAM_END    : c_int = 1;
@@ -26,7 +25,7 @@ pub struct GzipReader {
 }
 
 impl GzipReader {
-    pub fn decode(&mut self) -> Result<~str, ~str> {
+    pub fn decode(&mut self) -> Result<String, String> {
         let mut strm = unsafe { init::<zlib::z_stream>() };
         let mut tmp_ret = Vec::from_elem(self.inner.len(), 0u8);
 
