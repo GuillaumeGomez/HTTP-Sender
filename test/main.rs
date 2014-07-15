@@ -7,7 +7,7 @@ use std::os;
 
 fn main() {
     let mut server;
-    let mut page = "/".to_owned();
+    let mut page = "/".to_string();
 
     let tmp = os::args();
     let args = tmp.tail();
@@ -19,25 +19,25 @@ fn main() {
 
     match args {
         [ref a2] => {
-            server = a2.to_owned();
+            server = a2.to_string();
         },
         [ref a2, ref a3] => {
-            server = a2.to_owned();
-            page = a3.to_owned();
-            if page == "".to_owned() {
+            server = a2.to_string();
+            page = a3.to_string();
+            if page == "".to_string() {
                 fail!("page cannot be empty");
             }
         },
         _ => {
-            server = args.get(0).unwrap().to_owned();
-            page = args.get(1).unwrap().to_owned();
-            if page == "".to_owned() {
+            server = args.get(0).unwrap().to_string();
+            page = args.get(1).unwrap().to_string();
+            if page == "".to_string() {
                 fail!("page cannot be empty");
             }
             for tmp in args.tailn(2).iter() {
                 let segs = tmp.as_slice().splitn('=', 1).collect::<Vec<&str>>();
                 if segs.len() == 2 {
-                    values.push((segs.get(0).trim().to_owned(), segs.get(1).trim().to_owned()));
+                    values.push((segs.get(0).trim().to_string(), segs.get(1).trim().to_string()));
                 }
             }
         },

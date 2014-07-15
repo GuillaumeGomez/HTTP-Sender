@@ -3,6 +3,12 @@ HTTP-Sender
 
 A little HTTP request sender in rust. An example is provided in main.rs.
 
+To build this project, please use :
+
+```Shell
+> make
+```
+
 ##License
 
     Copyright (c) 2014 Guillaume Gomez
