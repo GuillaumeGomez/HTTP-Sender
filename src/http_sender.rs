@@ -7,8 +7,7 @@
 extern crate collections;
 extern crate libc;
 
-use std::io::TcpStream;
-use std::io::TcpStream::connect;
+use std::io::net::tcp::TcpStream;
 use std::io::net::addrinfo::get_host_addresses;
 use std::io::BufferedReader;
 use std::collections::HashMap;
@@ -35,14 +34,14 @@ impl ChunkReader {
         let mut is_in_chunk_extension = false;
         let mut pos = 0;
 
-        if self.data.len() > 1 && self.data.get(0) == &0u8 && self.data.get(1) == &0u8 {
+        if self.data.len() > 1 && self.data[0] == 0u8 && self.data[1] == 0u8 {
             return Ok((0, self.data.len() - 1));
         }
         while pos < self.data.len() {
-            match *self.data.get(pos) as char {
+            match self.data[pos] as char {
                 '\r' => {
                     pos += 1;
-                    if pos >= self.data.len() || self.data.get(pos) != &0x0au8 {
+                    if pos >= self.data.len() || self.data[pos] != 0x0au8 {
                         return Err("Error with '\r'".to_string());
                     }
                     break;
@@ -263,15 +262,15 @@ impl HttpSender {
             Ok(l) => l,
         };
         let segs = response.as_slice().splitn(' ', 2).collect::<Vec<&str>>();
-        let version = match *segs.get(0) {
+        let version = match segs[0] {
             "HTTP/1.1" => "1.1",
             "HTTP/1.0" => "1.0",
             v if v.starts_with("HTTP/") => "1.0",
             _ => return Err("Unsupported HTTP version".to_string()),
         };
 
-        let status = segs.get(1);
-        let reason = segs.get(2).trim_right();
+        let status = segs[1];
+        let reason = segs[2].trim_right();
 
         let mut headers = HashMap::new();
 
@@ -283,8 +282,8 @@ impl HttpSender {
 
             let segs = line.as_slice().splitn(':', 1).collect::<Vec<&str>>();
             if segs.len() == 2 {
-                let k = segs.get(0).trim();
-                let v = segs.get(1).trim();
+                let k = segs[0].trim();
+                let v = segs[1].trim();
                 headers.insert_or_update_with(k.to_string(), vec!(v.into_string()), |_k, ov| ov.push(v.into_string()));
             } else {
                 if ["\r\n".to_string(), "\n".to_string(), "".to_string()].contains(&line) {

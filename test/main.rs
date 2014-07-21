@@ -37,7 +37,7 @@ fn main() {
             for tmp in args.tailn(2).iter() {
                 let segs = tmp.as_slice().splitn('=', 1).collect::<Vec<&str>>();
                 if segs.len() == 2 {
-                    values.push((segs.get(0).trim().to_string(), segs.get(1).trim().to_string()));
+                    values.push((segs[0].trim().to_string(), segs[1].trim().to_string()));
                 }
             }
         },
