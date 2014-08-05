@@ -1,0 +1,15 @@
+[package]
+
+name = "http_sender"
+version = "1.0.0"
+authors = ["Guillaume Gomez <guillaume1.gomez@gmail.com>"]
+
+[[lib]]
+
+name = "http_sender"
+crate-type = ["dylib", "rlib"]
+
+[[bin]]
+
+name = "test"
+path = "test/main.rs"

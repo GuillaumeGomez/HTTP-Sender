@@ -58,16 +58,18 @@ impl ChunkReader {
                 }
                 _ => {
                     println!("{}", self.data);
-                    return Err("Chunk format error".to_string())}
+                    return Err("Chunk format error".to_string())
+                }
             }
         }
 
         if line.len() > MAXNUM_SIZE {
-            return Err("http chunk transfer encoding format: size line too long".to_string());
-        }
-        match from_str_radix(line.as_slice(), 16) {
-            Some(v) => Ok((v, pos + 1)),
-            None => Ok((0, 0)),
+            Err("http chunk transfer encoding format: size line too long".to_string())
+        } else {
+            match from_str_radix(line.as_slice(), 16) {
+                Some(v) => Ok((v, pos + 1)),
+                None => Ok((0, 0)),
+            }
         }
     }
 
@@ -78,15 +80,15 @@ impl ChunkReader {
             match self.read_from_chunk() {
                 Ok((to_write, to_skip)) => {
                     if to_write == 0 {
-                        return Ok((out.clone(), 0));
+                        Ok((out.clone(), 0))
+                    } else {
+                        let mut tmp_v = self.data.clone().move_iter().skip(to_skip).collect::<Vec<u8>>();
+
+                        tmp_v.truncate(to_write);
+                        out.push_all_move(tmp_v);
+                        self.data = self.data.clone().move_iter().skip(to_skip + to_write).collect::<Vec<u8>>();
+                        Ok((out.clone(), self.data.len()))
                     }
-                    let mut tmp_v = self.data.clone().move_iter().skip(to_skip).collect::<Vec<u8>>();
-
-                    tmp_v.truncate(to_write);
-
-                    out.push_all_move(tmp_v);
-                    self.data = self.data.clone().move_iter().skip(to_skip + to_write).collect::<Vec<u8>>();
-                    Ok((out.clone(), self.data.len()))
                 }
                 Err(e) => Err(e),
             }

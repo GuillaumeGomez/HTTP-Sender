@@ -48,7 +48,8 @@ impl GzipReader {
                         if unsafe {zlib::inflateEnd(&mut strm)} != Z_OK {
                             return Err("inflateEnd failed".to_string());
                         } else {
-                            return Ok(unsafe {::std::str::raw::from_utf8(tmp_ret.as_mut_slice()).to_string()});
+                            tmp_ret.push(0u8);
+                            return Ok(unsafe {::std::string::raw::from_buf(tmp_ret.as_ptr())});
                         }
                     },
                     Z_OK => {},
