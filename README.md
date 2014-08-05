@@ -1,12 +1,18 @@
-HTTP-Sender
+HTTP-Sender [![Build Status](https://api.travis-ci.org/GuillaumeGomez/HTTP-Sender.png?branch=master)](https://travis-ci.org/GuillaumeGomez/HTTP-Sender)
 ===========
 
-A little HTTP request sender in rust. An example is provided in main.rs.
+A little HTTP request sender in __Rust__. An example is provided in main.rs.
 
 To build this project, please use :
 
 ```Shell
 > make
+```
+
+Since this project supports __Cargo__, you can also build it like this :
+
+```Shell
+> cargo build
 ```
 
 ##License
