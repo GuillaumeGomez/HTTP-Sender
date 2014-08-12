@@ -2,7 +2,7 @@ env:
   global:
     - LD_LIBRARY_PATH=/usr/local/lib
 install:
-  - curl http://www.rust-lang.org/rustup.sh | sudo sh -
+  - curl https://static.rust-lang.org/rustup.sh | sudo sh -
   - sudo apt-get install zlib1g-dev
 script:
   - rustc --version
