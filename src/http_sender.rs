@@ -221,8 +221,8 @@ impl HttpSender {
     }
 
     fn from_utf8(&self, v: Vec<u8>) -> Result<String, String> {
-        match String::from_utf8(v) {
-            Err(_) => Err(String::from_str("Couldn't convert body to UTF-8")),
+        match String::from_utf8(v.clone()) {
+            Err(_) => Ok(String::from_utf8_lossy(v.as_slice()).to_string()),
             Ok(tmp) => Ok(tmp),
         }
     }
@@ -263,7 +263,7 @@ impl HttpSender {
             Err(_) => return Err("read line failed when getting data".to_string()),
             Ok(l) => l,
         };
-        let segs = response.as_slice().splitn(' ', 2).collect::<Vec<&str>>();
+        let segs = response.as_slice().splitn(2, ' ').collect::<Vec<&str>>();
         let version = match segs[0] {
             "HTTP/1.1" => "1.1",
             "HTTP/1.0" => "1.0",
@@ -282,7 +282,7 @@ impl HttpSender {
                 Ok(l) => l,
             };
 
-            let segs = line.as_slice().splitn(':', 1).collect::<Vec<&str>>();
+            let segs = line.as_slice().splitn(1, ' ').collect::<Vec<&str>>();
             if segs.len() == 2 {
                 let k = segs[0].trim();
                 let v = segs[1].trim();
@@ -299,11 +299,11 @@ impl HttpSender {
         let mut chunked = false;
         for (v, k) in headers.iter() {
             let tmp_s = v.clone().into_ascii_lower();
-            if tmp_s == "content-encoding".to_string() {
+            if tmp_s == "content-encoding:".to_string() {
                 if k.contains(&("gzip".to_string())) {
                     gzip = true;
                 }
-            } else if tmp_s == "transfer-encoding".to_string() {
+            } else if tmp_s == "transfer-encoding:".to_string() {
                 if k.contains(&("chunked".to_string())) {
                     chunked = true;
                 }

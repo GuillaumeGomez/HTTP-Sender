@@ -34,8 +34,8 @@ fn main() {
             if page == "".to_string() {
                 fail!("page cannot be empty");
             }
-            for tmp in args.tailn(2).iter() {
-                let segs = tmp.as_slice().splitn('=', 1).collect::<Vec<&str>>();
+            for tmp in args.slice_from(2).iter() {
+                let segs = tmp.as_slice().splitn(1, '=').collect::<Vec<&str>>();
                 if segs.len() == 2 {
                     values.push((segs[0].trim().to_string(), segs[1].trim().to_string()));
                 }
@@ -56,7 +56,7 @@ fn main() {
                 println!("Response from server:");
                 println!("HTTP/{} {} {}\n", response.version, response.reason, response.status);
                 for (v, k) in response.headers.iter() {
-                    println!("{}: {}", v, k);
+                    println!("{} {}", v, k);
                 }
                 println!("\n{}", response.body)
             },
