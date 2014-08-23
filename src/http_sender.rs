@@ -2,6 +2,7 @@
 #![crate_type = "lib"]
 
 #![allow(dead_code)]
+#![allow(ctypes)]
 #![feature(globs)]
 
 extern crate collections;
