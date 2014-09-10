@@ -342,7 +342,7 @@ impl HttpSender {
             self.socket = TcpStream::connect(s_ip.as_slice(), 80).ok(); self.socket.is_none()}).next();
         if self.socket.is_some() {
             let t = self.create_header();
-            match self.socket.get_mut_ref().write(t.into_bytes().as_slice()) {
+            match self.socket.as_mut().unwrap().write(t.into_bytes().as_slice()) {
                 Err(_) => Err("Couldn't send message".to_string()),
                 Ok(_) => Ok(()),
             }
