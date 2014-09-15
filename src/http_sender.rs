@@ -149,8 +149,16 @@ impl HttpSender {
         self.output_file = Some(String::from_str(file_name));
     }
 
+    pub fn get_output_filename(&self) -> Option<String> {
+        self.output_file.clone()
+    }
+
     pub fn set_verbose(&mut self, verbose: bool) {
         self.verbose = verbose;
+    }
+
+    pub fn is_verbose(&self) -> bool {
+        self.verbose
     }
 
     pub fn add_argument(mut self, key: &str, value: &str) -> HttpSender {
