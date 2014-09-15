@@ -466,9 +466,9 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
                         if downloaded_data < 1000 {
                             format!("{} o/s", downloaded_data)
                         } else if downloaded_data < 1000000 {
-                            format!("{} Ko/s", downloaded_data)
+                            format!("{} Ko/s", downloaded_data / 1000)
                         } else {
-                            format!("{} Mo/s", downloaded_data)
+                            format!("{} Mo/s", downloaded_data / 1000000)
                         });
                     io::stdio::flush();
                     timer = current_time;
