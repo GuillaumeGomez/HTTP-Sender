@@ -7,6 +7,7 @@
 
 extern crate collections;
 extern crate libc;
+extern crate time;
 
 use std::io::net::tcp::TcpStream;
 use std::io::net::addrinfo::get_host_addresses;
@@ -15,6 +16,9 @@ use std::collections::HashMap;
 use gzip_reader::GzipReader;
 use std::ascii::OwnedStrAsciiExt;
 use std::num::from_str_radix;
+use std::io;
+use std::io::{File, Open, Write};
+use time::get_time;
 
 mod gzip_reader;
 mod zlib;
@@ -115,7 +119,8 @@ pub struct HttpSender {
     args: HashMap<String, Vec<String>>,
     request_type: String,
     user_agent: String,
-    verbose: bool
+    verbose: bool,
+    output_file: Option<String>
 }
 
 impl HttpSender {
@@ -123,7 +128,7 @@ impl HttpSender {
     pub fn new(server_address: &str, page: &str) -> HttpSender {
         HttpSender{address: server_address.to_string(), page: page.to_string(), port: 80, socket: None,
             args: HashMap::new(), request_type: "GET".to_string(), user_agent: "imperio-test/0.1".to_string(),
-            verbose: false}
+            verbose: false, output_file: None}
     }
 
     pub fn create_request(server_address : &str, page: &str, request_method : &str) -> HttpSender {
@@ -132,12 +137,16 @@ impl HttpSender {
         if requests.contains(&request_method.clone()) {
             HttpSender{address: server_address.to_string(), page: page.to_string(), port: 80, socket: None,
                         args: HashMap::new(), request_type: request_method.to_string(),
-                        user_agent: "imperio-test/0.1".to_string(), verbose: false}
+                        user_agent: "imperio-test/0.1".to_string(), verbose: false, output_file: None}
         } else {
             HttpSender{address: server_address.to_string(), page: page.to_string(), port: 80, socket: None,
                         args: HashMap::new(), request_type: "GET".to_string(),
-                        user_agent: "imperio-test/0.1".to_string(), verbose: false}
+                        user_agent: "imperio-test/0.1".to_string(), verbose: false, output_file: None}
         }
+    }
+
+    pub fn set_output_filename(&mut self, file_name: &str) {
+        self.output_file = Some(String::from_str(file_name));
     }
 
     pub fn set_verbose(&mut self, verbose: bool) {
@@ -307,6 +316,14 @@ impl HttpSender {
         
         let mut gzip = false;
         let mut chunked = false;
+
+        if is_byte_response(&headers) {
+            return get_bytes_data(&headers, &mut stream, version, status, reason,
+                match self.output_file {
+                    None => "".into_string(),
+                    Some(ref f) => f.clone()
+                });
+        }
         for (v, k) in headers.iter() {
             let tmp_s = v.clone().into_ascii_lower();
             if tmp_s == "content-encoding:".to_string() {
@@ -361,4 +378,100 @@ impl HttpSender {
             Err("Couldn't send message".to_string())
         }
     }
+}
+
+fn is_byte_response(headers: &HashMap<String, Vec<String>>) -> bool {
+    let mut found_range = false;
+    let mut found_connection = false;
+
+    for (v, k) in headers.iter() {
+        let tmp_s = v.clone().into_ascii_lower();
+        if tmp_s == "accept-ranges:".to_string() {
+            if k.contains(&("bytes".to_string())) {
+                found_range = true;
+            }
+        } else if tmp_s == "connection:".to_string() {
+            if k.contains(&("keep-alive".to_string())) {
+                found_connection = true;
+            }
+        }
+    }
+    found_connection && found_range
+}
+
+fn get_file_name() -> String {
+    let mut reader = io::stdin();
+
+    print!("Please enter the file name of the content : ");
+    reader.read_line().ok().unwrap_or("".to_string())
+}
+
+#[allow(unused_must_use)]
+fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedReader<TcpStream>, version: &str, status: &str,
+    reason: &str, filename: String) -> Result<ResponseData, String> {
+    let file_name = if filename.as_slice() != "" {
+        filename
+    } else {
+        let mut tmp = get_file_name();
+        tmp.pop_char();
+        tmp
+    };
+
+    if file_name.as_slice() == "" {
+        fail!("invalid file_name");
+    }
+    let mut file = match File::open_mode(&Path::new(file_name), Open, Write) {
+        Ok(f) => f,
+        Err(e) => fail!("file error: {}", e),
+    };
+    let mut length = 0u;
+    let mut position = 0u;
+
+    for (v, k) in headers.iter() {
+        let tmp_s = v.clone().into_ascii_lower();
+        if tmp_s == "content-length:".to_string() {
+            length = from_str(k[0].as_slice()).unwrap();
+        }
+    }
+    let mut buf = [0, ..100000];
+    let mut timer = get_time().sec;
+    let mut downloaded_data = 0u;
+
+    loop {
+        match stream.read(buf) {
+            Ok(s) => {
+                let tmp = unsafe { ::std::vec::raw::from_buf(buf.as_ptr(), s) };
+                position += s;
+                file.write(tmp.as_slice());
+                let current_time = get_time().sec;
+                downloaded_data += s;
+
+                if current_time != timer {
+                    let remaining = length / downloaded_data;
+                    print!("\r{} / {} -> {}% - remaining time: {}  | {}         ", position, length,
+                        position as f32 / length as f32 * 100f32,
+                        if remaining < 3600 {
+                            format!("{:02u}:{:02u}", remaining / 60, remaining % 60)
+                        } else {
+                            format!("{:02u}:{:02u}:{:02u}", remaining / 3600, remaining / 60, remaining % 60)
+                        },
+                        if downloaded_data < 1000 {
+                            format!("{} o/s", downloaded_data)
+                        } else if downloaded_data < 1000000 {
+                            format!("{} Ko/s", downloaded_data)
+                        } else {
+                            format!("{} Mo/s", downloaded_data)
+                        });
+                    io::stdio::flush();
+                    timer = current_time;
+                    downloaded_data = 0u;
+                }
+            }
+            Err(_) => {
+                break;
+            }
+        }
+    }
+    Ok(ResponseData{body: "".into_string(), headers: headers.clone(),
+        version: version.to_string(), status: status.to_string(), reason: reason.to_string()})
 }
