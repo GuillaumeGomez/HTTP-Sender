@@ -48,6 +48,7 @@ fn main() {
     } else {
         HttpSender::create_request(server.as_slice(), page.as_slice(), "POST").add_arguments(values)
     };
+    h.set_verbose(true);
     match h.send_request() {
         Err(e) => println!("Error: {}", e),
         Ok(_) => match h.get_response() {

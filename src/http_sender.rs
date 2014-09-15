@@ -115,13 +115,15 @@ pub struct HttpSender {
     args: HashMap<String, Vec<String>>,
     request_type: String,
     user_agent: String,
+    verbose: bool
 }
 
 impl HttpSender {
     // same as HttpSender::create_request(address, page, "GET")
     pub fn new(server_address: &str, page: &str) -> HttpSender {
         HttpSender{address: server_address.to_string(), page: page.to_string(), port: 80, socket: None,
-            args: HashMap::new(), request_type: "GET".to_string(), user_agent: "imperio-test/0.1".to_string()}
+            args: HashMap::new(), request_type: "GET".to_string(), user_agent: "imperio-test/0.1".to_string(),
+            verbose: false}
     }
 
     pub fn create_request(server_address : &str, page: &str, request_method : &str) -> HttpSender {
@@ -130,12 +132,16 @@ impl HttpSender {
         if requests.contains(&request_method.clone()) {
             HttpSender{address: server_address.to_string(), page: page.to_string(), port: 80, socket: None,
                         args: HashMap::new(), request_type: request_method.to_string(),
-                        user_agent: "imperio-test/0.1".to_string()}
+                        user_agent: "imperio-test/0.1".to_string(), verbose: false}
         } else {
             HttpSender{address: server_address.to_string(), page: page.to_string(), port: 80, socket: None,
                         args: HashMap::new(), request_type: "GET".to_string(),
-                        user_agent: "imperio-test/0.1".to_string()}
+                        user_agent: "imperio-test/0.1".to_string(), verbose: false}
         }
+    }
+
+    pub fn set_verbose(&mut self, verbose: bool) {
+        self.verbose = verbose;
     }
 
     pub fn add_argument(mut self, key: &str, value: &str) -> HttpSender {
@@ -205,7 +211,10 @@ impl HttpSender {
 
         if self.request_type == "GET".to_string() || self.request_type == "HEAD".to_string() {
             let tmp = self.create_simple_header(args.clone());
-            println!("req : {}", tmp);
+            
+            if self.verbose {
+                println!("req : {}", tmp);
+            }
             tmp
         } else {
             self.create_header_with_args(args.clone())
@@ -338,7 +347,9 @@ impl HttpSender {
         addr.iter().skip_while(|&a| {
             let s_ip = format!("{}", *a);
 
-            println!("ip: {}", s_ip);
+            if self.verbose {
+                println!("ip: {}", s_ip);
+            }
             self.socket = TcpStream::connect(s_ip.as_slice(), 80).ok(); self.socket.is_none()}).next();
         if self.socket.is_some() {
             let t = self.create_header();
