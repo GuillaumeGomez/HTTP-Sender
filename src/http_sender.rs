@@ -330,7 +330,7 @@ impl HttpSender {
                 match self.output_file {
                     None => "".into_string(),
                     Some(ref f) => f.clone()
-                });
+                }, self.verbose);
         }
         for (v, k) in headers.iter() {
             let tmp_s = v.clone().into_ascii_lower();
@@ -414,9 +414,39 @@ fn get_file_name() -> String {
     reader.read_line().ok().unwrap_or("".to_string())
 }
 
+fn clean_useless_bytes(stream: &mut BufferedReader<TcpStream>, begin_bytes: uint, verbose: bool) {
+    if begin_bytes > 0 {
+        if verbose {
+            println!("Let's clean {} byte(s)", begin_bytes);
+        }
+        let mut read = 0u;
+        let mut v = Vec::with_capacity(begin_bytes);
+
+        loop {
+            match stream.read_at_least(begin_bytes - read, v.as_mut_slice()) {
+                Ok(s) => {
+                    read += s;
+                }
+                Err(e) => {
+                    if e.kind == std::io::EndOfFile {
+                        fail!("Error with bytes range")
+                    } else if e.kind == std::io::NoProgress {
+                        
+                    } else {
+                        fail!("An error occured : {}", e)
+                    }
+                }
+            }
+            if read >= begin_bytes {
+                break;
+            }
+        }
+    }
+}
+
 #[allow(unused_must_use)]
 fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedReader<TcpStream>, version: &str, status: &str,
-    reason: &str, filename: String) -> Result<ResponseData, String> {
+    reason: &str, filename: String, verbose: bool) -> Result<ResponseData, String> {
     let file_name = if filename.as_slice() != "" {
         filename
     } else {
@@ -434,45 +464,65 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
     };
     let mut length = 0u;
     let mut position = 0u;
+    let mut begin_bytes = 0u;
 
     for (v, k) in headers.iter() {
         let tmp_s = v.clone().into_ascii_lower();
         if tmp_s == "content-length:".to_string() {
             length = from_str(k[0].as_slice()).unwrap();
+        } else if tmp_s == "content-range:".to_string() {
+            let tmp_begin : Vec<&str> = k[0].as_slice().split_str(" ").collect();
+            let begin = tmp_begin[0];
+            let tmp_bytes : Vec<&str> = begin.split_str("-").collect();
+
+            begin_bytes = from_str(tmp_bytes[0]).unwrap();
         }
     }
+    clean_useless_bytes(stream, begin_bytes, verbose);
     let mut buf = [0, ..100000];
     let mut timer = get_time().sec;
     let mut downloaded_data = 0u;
 
     loop {
-        if 100000 > length - position {
+        if buf.len() <= length - position {
             match stream.read(buf) {
                 Ok(s) => {
                     let tmp = unsafe { ::std::vec::raw::from_buf(buf.as_ptr(), s) };
                     position += s;
                     file.write(tmp.as_slice());
                     downloaded_data += s;
-                    print_stats(length, &mut downloaded_data, position, &mut timer);
                 }
-                Err(_) => {
-                    break;
+                Err(e) => {
+                    if e.kind == std::io::EndOfFile {
+                        break
+                    } else {
+                        fail!("An error occured : {}", e)
+                    }
                 }
             }
         } else {
-            let mut tmp_buf = Vec::with_capacity(length - position);
-
-            match stream.read(tmp_buf.as_mut_slice()) {
+            let mut second_buff = Vec::new();
+            match stream.push_at_least(length - position, length - position, &mut second_buff) {
                 Ok(s) => {
-                    let tmp = unsafe { ::std::vec::raw::from_buf(tmp_buf.as_ptr(), s) };
+                    let tmp = unsafe { ::std::vec::raw::from_buf(second_buff.as_ptr(), s) };
                     position += s;
                     file.write(tmp.as_slice());
-
                     downloaded_data += s;
-                    print_stats(length, &mut downloaded_data, position, &mut timer);
                 }
-                Err(_) => break,
+                Err(e) => {
+                    if e.kind == std::io::EndOfFile {
+                        break;
+                    } else if e.kind == std::io::NoProgress {
+                        println!("No progress made...");
+                    } else {
+                        fail!("An error occured : {}", e);
+                    }
+                }
             }
+        }
+        print_stats(length, &mut downloaded_data, position, &mut timer);
+        if length <= position {
+            break;
         }
     }
     Ok(ResponseData{body: "".into_string(), headers: headers.clone(),
@@ -484,11 +534,11 @@ fn print_stats(length: uint, downloaded_data: &mut uint, position: uint, timer: 
 
     if current_time != *timer {
         let remaining = if *downloaded_data > 0 {
-            length / *downloaded_data
+            (length - position) / *downloaded_data
         } else {
             0u
         };
-        print!("\r{} / {} -> {}% - remaining time: {}  | {}         ", position, length,
+        print!("{} / {} -> {}% - remaining time: {}  | {}         \r", position, length,
             position as f32 / length as f32 * 100f32,
             if remaining < 3600 {
                 format!("{:02u}:{:02u}", remaining / 60, remaining % 60)
