@@ -446,40 +446,60 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
     let mut downloaded_data = 0u;
 
     loop {
-        match stream.read(buf) {
-            Ok(s) => {
-                let tmp = unsafe { ::std::vec::raw::from_buf(buf.as_ptr(), s) };
-                position += s;
-                file.write(tmp.as_slice());
-                let current_time = get_time().sec;
-                downloaded_data += s;
-
-                if current_time != timer {
-                    let remaining = length / downloaded_data;
-                    print!("\r{} / {} -> {}% - remaining time: {}  | {}         ", position, length,
-                        position as f32 / length as f32 * 100f32,
-                        if remaining < 3600 {
-                            format!("{:02u}:{:02u}", remaining / 60, remaining % 60)
-                        } else {
-                            format!("{:02u}:{:02u}:{:02u}", remaining / 3600, remaining / 60, remaining % 60)
-                        },
-                        if downloaded_data < 1000 {
-                            format!("{} o/s", downloaded_data)
-                        } else if downloaded_data < 1000000 {
-                            format!("{} Ko/s", downloaded_data / 1000)
-                        } else {
-                            format!("{} Mo/s", downloaded_data / 1000000)
-                        });
-                    io::stdio::flush();
-                    timer = current_time;
-                    downloaded_data = 0u;
+        if 100000 > length - position {
+            match stream.read(buf) {
+                Ok(s) => {
+                    let tmp = unsafe { ::std::vec::raw::from_buf(buf.as_ptr(), s) };
+                    position += s;
+                    file.write(tmp.as_slice());
+                    downloaded_data += s;
+                    print_stats(length, &mut downloaded_data, position, &mut timer);
+                }
+                Err(_) => {
+                    break;
                 }
             }
-            Err(_) => {
-                break;
+        } else {
+            let mut tmp_buf = Vec::with_capacity(length - position);
+
+            match stream.read(tmp_buf.as_mut_slice()) {
+                Ok(s) => {
+                    let tmp = unsafe { ::std::vec::raw::from_buf(tmp_buf.as_ptr(), s) };
+                    position += s;
+                    file.write(tmp.as_slice());
+
+                    downloaded_data += s;
+                    print_stats(length, &mut downloaded_data, position, &mut timer);
+                }
+                Err(_) => break,
             }
         }
     }
     Ok(ResponseData{body: "".into_string(), headers: headers.clone(),
         version: version.to_string(), status: status.to_string(), reason: reason.to_string()})
+}
+
+fn print_stats(length: uint, downloaded_data: &mut uint, position: uint, timer: &mut i64) {
+    let remaining = length / *downloaded_data;
+    let current_time = get_time().sec;
+
+    if current_time != *timer {
+        print!("\r{} / {} -> {}% - remaining time: {}  | {}         ", position, length,
+            position as f32 / length as f32 * 100f32,
+            if remaining < 3600 {
+                format!("{:02u}:{:02u}", remaining / 60, remaining % 60)
+            } else {
+                format!("{:02u}:{:02u}:{:02u}", remaining / 3600, remaining / 60, remaining % 60)
+            },
+            if *downloaded_data < 1000 {
+                format!("{} o/s", *downloaded_data)
+            } else if *downloaded_data < 1000000 {
+                format!("{} Ko/s", *downloaded_data / 1000)
+            } else {
+                format!("{} Mo/s", *downloaded_data / 1000000)
+            });
+        io::stdio::flush();
+        *timer = current_time;
+        *downloaded_data = 0u;
+    }
 }
