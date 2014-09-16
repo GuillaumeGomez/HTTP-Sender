@@ -480,10 +480,14 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
 }
 
 fn print_stats(length: uint, downloaded_data: &mut uint, position: uint, timer: &mut i64) {
-    let remaining = length / *downloaded_data;
     let current_time = get_time().sec;
 
     if current_time != *timer {
+        let remaining = if *downloaded_data > 0 {
+            length / *downloaded_data
+        } else {
+            0u
+        };
         print!("\r{} / {} -> {}% - remaining time: {}  | {}         ", position, length,
             position as f32 / length as f32 * 100f32,
             if remaining < 3600 {
