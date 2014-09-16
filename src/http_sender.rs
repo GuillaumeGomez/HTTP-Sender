@@ -402,6 +402,14 @@ fn is_byte_response(headers: &HashMap<String, Vec<String>>) -> bool {
             if k.contains(&("keep-alive".to_string())) {
                 found_connection = true;
             }
+        } else if tmp_s == "content-type:".to_string() {
+            for it in k.iter() {
+                let sub_it = it.as_slice();
+
+                if sub_it.contains("video") || sub_it.contains("audio") {
+                    return true;
+                }
+            }
         }
     }
     found_connection && found_range
