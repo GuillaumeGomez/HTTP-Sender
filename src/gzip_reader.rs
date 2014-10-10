@@ -4,21 +4,21 @@ use std::vec::Vec;
 use std::mem::{size_of, zeroed};
 use zlib;
 
-static Z_OK            : c_int = 0;
-static Z_STREAM_END    : c_int = 1;
-static Z_NEED_DICT     : c_int = 2;
-static Z_ERRNO         : c_int = -1;
-static Z_STREAM_ERROR  : c_int = -2;
-static Z_DATA_ERROR    : c_int = -3;
-static Z_MEM_ERROR     : c_int = -4;
-static Z_BUF_ERROR     : c_int = -5;
-static Z_VERSION_ERROR : c_int = -6;
+const Z_OK            : c_int = 0;
+const Z_STREAM_END    : c_int = 1;
+const Z_NEED_DICT     : c_int = 2;
+const Z_ERRNO         : c_int = -1;
+const Z_STREAM_ERROR  : c_int = -2;
+const Z_DATA_ERROR    : c_int = -3;
+const Z_MEM_ERROR     : c_int = -4;
+const Z_BUF_ERROR     : c_int = -5;
+const Z_VERSION_ERROR : c_int = -6;
 
-static MAX_WBITS : c_int = 15;
-static Z_NULL    : c_int = 0;
+const MAX_WBITS : c_int = 15;
+const Z_NULL    : c_int = 0;
 
-static Z_NO_FLUSH   : c_int = 0;
-static Z_SYNC_FLUSH : c_int = 2;
+const Z_NO_FLUSH   : c_int = 0;
+const Z_SYNC_FLUSH : c_int = 2;
 
 pub struct GzipReader {
     pub inner: Vec<u8>,
@@ -44,8 +44,7 @@ impl GzipReader {
                 strm.avail_out = (tmp_ret.len() - strm.total_out as uint) as u32;
 
                 match unsafe {zlib::inflate(&mut strm, Z_SYNC_FLUSH)} {
-                    // Z_STREAM_END
-                    1i32 => {
+                    Z_STREAM_END => {
                         if unsafe {zlib::inflateEnd(&mut strm)} != Z_OK {
                             return Err("inflateEnd failed".to_string());
                         } else {
@@ -53,8 +52,7 @@ impl GzipReader {
                             return Ok(unsafe {::std::string::raw::from_buf(tmp_ret.as_ptr())});
                         }
                     },
-                    // Z_OK
-                    0i32 => {},
+                    Z_OK => {},
                     _ => return Err("inflate failed".to_string()),
                 }
             }
