@@ -38,13 +38,14 @@ impl GzipReader {
         } else {
             loop {
                 if strm.total_out as uint >= tmp_ret.len() {
-                    tmp_ret = tmp_ret.append(Vec::from_elem(self.inner.len(), 0u8).as_slice());
+                    tmp_ret.grow(self.inner.len(), 0u8);
                 }
                 strm.next_out = unsafe {mem::transmute(&tmp_ret.as_mut_slice()[strm.total_out as uint])};
                 strm.avail_out = (tmp_ret.len() - strm.total_out as uint) as u32;
 
                 match unsafe {zlib::inflate(&mut strm, Z_SYNC_FLUSH)} {
-                    Z_STREAM_END => {
+                    // Z_STREAM_END
+                    1i32 => {
                         if unsafe {zlib::inflateEnd(&mut strm)} != Z_OK {
                             return Err("inflateEnd failed".to_string());
                         } else {
@@ -52,7 +53,8 @@ impl GzipReader {
                             return Ok(unsafe {::std::string::raw::from_buf(tmp_ret.as_ptr())});
                         }
                     },
-                    Z_OK => {},
+                    // Z_OK
+                    0i32 => {},
                     _ => return Err("inflate failed".to_string()),
                 }
             }

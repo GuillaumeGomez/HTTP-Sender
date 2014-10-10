@@ -19,6 +19,7 @@ use std::num::from_str_radix;
 use std::io;
 use std::io::{File, Open, Write};
 use time::get_time;
+use std::collections::hashmap::{Occupied, Vacant};
 
 mod gzip_reader;
 mod zlib;
@@ -58,7 +59,7 @@ impl ChunkReader {
                 }
                 ';' => {is_in_chunk_extension = true;}
                 c if HEX_CHARS.contains(&(c as u8)) => {
-                    line.push_char(c);
+                    line.push(c);
                     pos += 1;
                 }
                 _ => {
@@ -87,11 +88,11 @@ impl ChunkReader {
                     if to_write == 0 {
                         Ok((out.clone(), 0))
                     } else {
-                        let mut tmp_v = self.data.clone().move_iter().skip(to_skip).collect::<Vec<u8>>();
+                        let mut tmp_v = self.data.clone().into_iter().skip(to_skip).collect::<Vec<u8>>();
 
                         tmp_v.truncate(to_write);
-                        out.push_all_move(tmp_v);
-                        self.data = self.data.clone().move_iter().skip(to_skip + to_write).collect::<Vec<u8>>();
+                        out.extend(tmp_v.into_iter());
+                        self.data = self.data.clone().into_iter().skip(to_skip + to_write).collect::<Vec<u8>>();
                         Ok((out.clone(), self.data.len()))
                     }
                 }
@@ -163,9 +164,14 @@ impl HttpSender {
 
     pub fn add_argument(mut self, key: &str, value: &str) -> HttpSender {
         let c_v = value.to_string();
-        self.args.insert_or_update_with(key.to_string(),
-                                        vec!(value.to_string()),
-                                        |ref _k, v| v.push(c_v.to_string()));
+
+        match self.args.entry(key.to_string()) {
+            Vacant(entry) => entry.set(vec!(c_v.to_string())),
+            Occupied(mut entry) => {
+                (*entry.get_mut()).push(c_v.to_string());
+                entry.into_mut()
+            }
+        };
         self
     }
 
@@ -173,9 +179,14 @@ impl HttpSender {
         for &(ref k, ref v) in arguments.iter() {
             let t_k = k.clone();
             let c_v = v.to_string();
-            self.args.insert_or_update_with(t_k.to_string(),
-                                        vec!(v.to_string()),
-                                        |ref _k, v| v.push(c_v.to_string()));
+
+            match self.args.entry(t_k.to_string()) {
+                Vacant(entry) => entry.set(vec!(v.to_string())),
+                Occupied(mut entry) => {
+                    (*entry.get_mut()).push(c_v.to_string());
+                    entry.into_mut()
+                }
+            };
         }
         self
     }
@@ -313,7 +324,14 @@ impl HttpSender {
             if segs.len() == 2 {
                 let k = segs[0].trim();
                 let v = segs[1].trim();
-                headers.insert_or_update_with(k.to_string(), vec!(v.into_string()), |_k, ov| ov.push(v.into_string()));
+
+                match headers.entry(k.to_string()) {
+                    Vacant(entry) => entry.set(vec!(v.to_string())),
+                    Occupied(mut entry) => {
+                        (*entry.get_mut()).push(v.to_string());
+                        entry.into_mut()
+                    }
+                };
             } else {
                 if ["\r\n".to_string(), "\n".to_string(), "".to_string()].contains(&line) {
                     break;
@@ -459,7 +477,7 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
         filename
     } else {
         let mut tmp = get_file_name();
-        tmp.pop_char();
+        tmp.pop();
         tmp
     };
 
