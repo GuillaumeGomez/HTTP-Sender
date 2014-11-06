@@ -2,24 +2,24 @@
 #![crate_type = "lib"]
 
 #![allow(dead_code)]
-#![allow(ctypes)]
+#![allow(improper_ctypes)]
 #![feature(globs)]
 
 extern crate collections;
 extern crate libc;
 extern crate time;
 
-use std::io::net::tcp::TcpStream;
+use std::io::TcpStream;
 use std::io::net::addrinfo::get_host_addresses;
 use std::io::BufferedReader;
 use std::collections::HashMap;
 use gzip_reader::GzipReader;
-use std::ascii::OwnedStrAsciiExt;
 use std::num::from_str_radix;
 use std::io;
 use std::io::{File, Open, Write};
 use time::get_time;
-use std::collections::hashmap::{Occupied, Vacant};
+use std::collections::hash_map::{Occupied, Vacant};
+use std::ascii::OwnedAsciiExt;
 
 mod gzip_reader;
 mod zlib;
@@ -393,7 +393,17 @@ impl HttpSender {
             if self.verbose {
                 println!("ip: {}", s_ip);
             }
-            self.socket = TcpStream::connect(s_ip.as_slice(), 80).ok(); self.socket.is_none()}).next();
+            match TcpStream::connect(format!("{}:{}", s_ip, 80u).as_slice()) {
+                Ok(s) => {
+                    self.socket = Some(s);
+                    false
+                }
+                Err(_) => {
+                    self.socket = None;
+                    true
+                }
+            }
+        }).next();
         if self.socket.is_some() {
             let t = self.create_header();
             match self.socket.as_mut().unwrap().write(t.into_bytes().as_slice()) {
@@ -455,11 +465,11 @@ fn clean_useless_bytes(stream: &mut BufferedReader<TcpStream>, begin_bytes: uint
                 }
                 Err(e) => {
                     if e.kind == std::io::EndOfFile {
-                        fail!("Error with bytes range")
+                        panic!("Error with bytes range")
                     } else if e.kind == std::io::NoProgress {
                         
                     } else {
-                        fail!("An error occured : {}", e)
+                        panic!("An error occured : {}", e)
                     }
                 }
             }
@@ -482,11 +492,11 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
     };
 
     if file_name.as_slice() == "" {
-        fail!("invalid file_name");
+        panic!("invalid file_name");
     }
     let mut file = match File::open_mode(&Path::new(file_name), Open, Write) {
         Ok(f) => f,
-        Err(e) => fail!("file error: {}", e),
+        Err(e) => panic!("file error: {}", e),
     };
     let mut length = 0u;
     let mut position = 0u;
@@ -522,7 +532,7 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
                     if e.kind == std::io::EndOfFile {
                         break
                     } else {
-                        fail!("An error occured : {}", e)
+                        panic!("An error occured : {}", e)
                     }
                 }
             }
@@ -541,7 +551,7 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
                     } else if e.kind == std::io::NoProgress {
                         println!("No progress made...");
                     } else {
-                        fail!("An error occured : {}", e);
+                        panic!("An error occured : {}", e);
                     }
                 }
             }

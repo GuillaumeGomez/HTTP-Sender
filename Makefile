@@ -28,7 +28,7 @@ project:
 
 example:
 	mkdir -p bin
-	rustc -o bin/test -L ./lib test/main.rs
+	rustc -o bin/test -L ./lib example/main.rs
 
 clean:
 	rm -rf bin

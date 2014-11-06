@@ -12,4 +12,4 @@ crate-type = ["dylib", "rlib"]
 [[bin]]
 
 name = "test"
-path = "test/main.rs"
+path = "example/main.rs"
