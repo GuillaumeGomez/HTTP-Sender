@@ -14,95 +14,16 @@ use std::io::net::addrinfo::get_host_addresses;
 use std::io::BufferedReader;
 use std::collections::HashMap;
 use gzip_reader::GzipReader;
-use std::num::from_str_radix;
 use std::io;
 use std::io::{File, Open, Write};
 use time::get_time;
 use std::collections::hash_map::{Occupied, Vacant};
 use std::ascii::OwnedAsciiExt;
+use chunk_reader::ChunkReader;
 
 mod gzip_reader;
 mod zlib;
-
-struct ChunkReader {
-    data: Vec<u8>,
-}
-
-impl ChunkReader {
-    fn new(v : &Vec<u8>) -> ChunkReader {
-        ChunkReader{data: v.clone()}
-    }
-
-    fn read_from_chunk(&self) -> Result<(uint, uint), String> {
-        let mut line = String::new();
-        static MAXNUM_SIZE : uint = 16;
-        static HEX_CHARS : &'static [u8] = b"0123456789abcdefABCDEF";
-        let mut is_in_chunk_extension = false;
-        let mut pos = 0;
-
-        if self.data.len() > 1 && self.data[0] == 0u8 && self.data[1] == 0u8 {
-            return Ok((0, self.data.len() - 1));
-        }
-        while pos < self.data.len() {
-            match self.data[pos] as char {
-                '\r' => {
-                    pos += 1;
-                    if pos >= self.data.len() || self.data[pos] != 0x0au8 {
-                        return Err("Error with '\r'".to_string());
-                    }
-                    break;
-                }
-                '\n' => break,
-                _ if is_in_chunk_extension => {
-                    pos += 1;
-                    continue;
-                }
-                ';' => {is_in_chunk_extension = true;}
-                c if HEX_CHARS.contains(&(c as u8)) => {
-                    line.push(c);
-                    pos += 1;
-                }
-                _ => {
-                    println!("{}", self.data);
-                    return Err("Chunk format error".to_string())
-                }
-            }
-        }
-
-        if line.len() > MAXNUM_SIZE {
-            Err("http chunk transfer encoding format: size line too long".to_string())
-        } else {
-            match from_str_radix(line.as_slice(), 16) {
-                Some(v) => Ok((v, pos + 1)),
-                None => Ok((0, 0)),
-            }
-        }
-    }
-
-    fn read_next(&mut self) -> Result<(Vec<u8>, uint), String> {
-        let mut out = Vec::new();
-
-        if self.data.len() > 0 {
-            match self.read_from_chunk() {
-                Ok((to_write, to_skip)) => {
-                    if to_write == 0 {
-                        Ok((out.clone(), 0))
-                    } else {
-                        let mut tmp_v = self.data.clone().into_iter().skip(to_skip).collect::<Vec<u8>>();
-
-                        tmp_v.truncate(to_write);
-                        out.extend(tmp_v.into_iter());
-                        self.data = self.data.clone().into_iter().skip(to_skip + to_write).collect::<Vec<u8>>();
-                        Ok((out.clone(), self.data.len()))
-                    }
-                }
-                Err(e) => Err(e),
-            }
-        } else {
-            Ok((out.clone(), 0))
-        }
-    }
-}
+mod chunk_reader;
 
 pub struct ResponseData {
     pub headers: HashMap<String, Vec<String>>,
@@ -249,8 +170,8 @@ impl HttpSender {
         }
     }
 
-    fn from_gzip(&self, v: Vec<u8>) -> Result<String, String> {
-        let mut g = GzipReader{inner: v};
+    fn from_gzip(&self, v: &Vec<u8>) -> Result<String, String> {
+        let mut g = GzipReader{inner: v.clone()};
 
         match g.decode() {
             Ok(res) => Ok(res),
@@ -258,38 +179,40 @@ impl HttpSender {
         }
     }
 
-    fn from_utf8(&self, v: Vec<u8>) -> Result<String, String> {
+    fn from_utf8(&self, v: &Vec<u8>) -> Result<String, String> {
         match String::from_utf8(v.clone()) {
             Err(_) => Ok(String::from_utf8_lossy(v.as_slice()).to_string()),
             Ok(tmp) => Ok(tmp),
         }
     }
 
-    fn read_all_chunked(&self, mut cr : ChunkReader, gzip : bool, mut out : String) -> Result<String, String> {
-        match cr.read_next() {
-            Err(res) => Err(res.to_string()),
-            Ok((res, size)) => {
-                if size > 0 {
+    fn read_all_chunked(&self, mut cr: ChunkReader, gzip: bool) -> Result<String, String> {
+        let mut out = String::new();
+
+        loop {
+            match cr.read_next() {
+                Err(res) => return Err(res.to_string()),
+                Ok((res, size)) => {
                     match if gzip == true {
-                        self.from_gzip(res)
+                        self.from_gzip(&res)
                     } else {
-                        self.from_utf8(res)
+                        self.from_utf8(&res)
                     } {
                         Ok(s) => {
                             out.push_str(s.as_slice());
-                            self.read_all_chunked(cr, gzip, out)
                         }
-                        Err(e) => Err(e.to_string()),
+                        Err(e) => return Err(e.to_string())
                     }
-                } else {
-                    Ok(out.into_string())
+                    if size == 0 {
+                        return Ok(out.into_string())
+                    }
                 }
             }
         }
     }
 
     fn from_chunked(&self, v: Vec<u8>, gzip: bool) -> Result<String, String> {
-        self.read_all_chunked(ChunkReader::new(&v), gzip, String::new())
+        self.read_all_chunked(ChunkReader::new(&v), gzip)
     }
 
     pub fn get_response(&self) -> Result<ResponseData, String> {
@@ -369,9 +292,9 @@ impl HttpSender {
                 match if chunked == true {
                     self.from_chunked(l, gzip)
                 } else if gzip == true {
-                    self.from_gzip(l)
+                    self.from_gzip(&l)
                 } else {
-                    self.from_utf8(l)
+                    self.from_utf8(&l)
                 } {
                    Err(e) => Err(e),
                    Ok(r) => Ok(ResponseData{body: r.into_string(), headers: headers,
@@ -521,7 +444,7 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
 
     loop {
         if buf.len() <= length - position {
-            match stream.read(buf) {
+            match stream.read(&mut buf) {
                 Ok(s) => {
                     let tmp = unsafe { ::std::vec::raw::from_buf(buf.as_ptr(), s) };
                     position += s;

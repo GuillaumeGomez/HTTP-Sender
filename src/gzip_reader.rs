@@ -40,6 +40,9 @@ impl GzipReader {
                 if strm.total_out as uint >= tmp_ret.len() {
                     tmp_ret.grow(self.inner.len(), 0u8);
                 }
+                if tmp_ret.len() == 0 {
+                    return Ok(String::new());
+                }
                 strm.next_out = unsafe {mem::transmute(&tmp_ret.as_mut_slice()[strm.total_out as uint])};
                 strm.avail_out = (tmp_ret.len() - strm.total_out as uint) as u32;
 
@@ -53,7 +56,11 @@ impl GzipReader {
                         }
                     },
                     Z_OK => {},
-                    _ => return Err("inflate failed".to_string()),
+                    _ => {
+                        //return Ok(unsafe {::std::string::raw::from_buf(tmp_ret.as_ptr())});
+                        //unsafe { println!("-> {}", ::std::string::raw::from_buf(tmp_ret.as_ptr())) };
+                        return Err("inflate failed".to_string())
+                    }
                 }
             }
         }
