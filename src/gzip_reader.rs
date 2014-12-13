@@ -52,7 +52,7 @@ impl GzipReader {
                             return Err("inflateEnd failed".to_string());
                         } else {
                             tmp_ret.push(0u8);
-                            return Ok(unsafe {::std::string::raw::from_buf(tmp_ret.as_ptr())});
+                            return Ok(unsafe {String::from_raw_buf(tmp_ret.as_ptr())});
                         }
                     },
                     Z_OK => {},

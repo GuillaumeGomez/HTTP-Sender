@@ -446,7 +446,7 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
         if buf.len() <= length - position {
             match stream.read(&mut buf) {
                 Ok(s) => {
-                    let tmp = unsafe { ::std::vec::raw::from_buf(buf.as_ptr(), s) };
+                    let tmp = unsafe { Vec::from_raw_buf(buf.as_ptr(), s) };
                     position += s;
                     file.write(tmp.as_slice());
                     downloaded_data += s;
@@ -463,7 +463,7 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
             let mut second_buff = Vec::new();
             match stream.push_at_least(length - position, length - position, &mut second_buff) {
                 Ok(s) => {
-                    let tmp = unsafe { ::std::vec::raw::from_buf(second_buff.as_ptr(), s) };
+                    let tmp = unsafe { Vec::from_raw_buf(second_buff.as_ptr(), s) };
                     position += s;
                     file.write(tmp.as_slice());
                     downloaded_data += s;
@@ -500,9 +500,9 @@ fn print_stats(length: uint, downloaded_data: &mut uint, position: uint, timer: 
         print!("{} / {} -> {}% - remaining time: {}  | {}         \r", position, length,
             position as f32 / length as f32 * 100f32,
             if remaining < 3600 {
-                format!("{:02u}:{:02u}", remaining / 60, remaining % 60)
+                format!("{:02}:{:02}", remaining / 60, remaining % 60)
             } else {
-                format!("{:02u}:{:02u}:{:02u}", remaining / 3600, remaining / 60, remaining % 60)
+                format!("{:02}:{:02}:{:02}", remaining / 3600, remaining / 60, remaining % 60)
             },
             if *downloaded_data < 1000 {
                 format!("{} o/s", *downloaded_data)
