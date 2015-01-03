@@ -4,7 +4,6 @@
 #![allow(dead_code)]
 #![allow(improper_ctypes)]
 #![feature(globs)]
-#![feature(slicing_syntax)]
 
 extern crate collections;
 extern crate libc;
@@ -25,6 +24,7 @@ use collections::str::FromStr;
 use std::borrow::ToOwned;
 use flate2::reader::GzDecoder;
 use std::io::BufReader;
+use std::path::BytesContainer;
 
 mod chunk_reader;
 
@@ -176,7 +176,10 @@ impl HttpSender {
     fn from_gzip(&self, v: &Vec<u8>) -> Result<String, String> {
         let mut g = GzDecoder::new(BufReader::new(v.container_as_bytes()));
 
-        Ok(g.read_to_string());
+        match g.read_to_string() {
+            Ok(res) => Ok(res),
+            Err(res) => Err(res.to_string())
+        }
         /*let mut g = GzipReader{inner: v.clone()};
 
         match g.decode() {
