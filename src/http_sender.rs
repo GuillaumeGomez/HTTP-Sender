@@ -4,25 +4,28 @@
 #![allow(dead_code)]
 #![allow(improper_ctypes)]
 #![feature(globs)]
+#![feature(slicing_syntax)]
 
 extern crate collections;
 extern crate libc;
 extern crate time;
+extern crate flate2;
 
 use std::io::TcpStream;
 use std::io::net::addrinfo::get_host_addresses;
 use std::io::BufferedReader;
 use std::collections::HashMap;
-use gzip_reader::GzipReader;
 use std::io;
 use std::io::{File, Open, Write};
 use time::get_time;
-use std::collections::hash_map::{Occupied, Vacant};
+use std::collections::hash_map::Entry;
 use std::ascii::OwnedAsciiExt;
 use chunk_reader::ChunkReader;
+use collections::str::FromStr;
+use std::borrow::ToOwned;
+use flate2::reader::GzDecoder;
+use std::io::BufReader;
 
-mod gzip_reader;
-mod zlib;
 mod chunk_reader;
 
 pub struct ResponseData {
@@ -87,8 +90,8 @@ impl HttpSender {
         let c_v = value.to_string();
 
         match self.args.entry(key.to_string()) {
-            Vacant(entry) => entry.set(vec!(c_v.to_string())),
-            Occupied(mut entry) => {
+            Entry::Vacant(entry) => entry.set(vec!(c_v.to_string())),
+            Entry::Occupied(mut entry) => {
                 (*entry.get_mut()).push(c_v.to_string());
                 entry.into_mut()
             }
@@ -102,8 +105,8 @@ impl HttpSender {
             let c_v = v.to_string();
 
             match self.args.entry(t_k.to_string()) {
-                Vacant(entry) => entry.set(vec!(v.to_string())),
-                Occupied(mut entry) => {
+                Entry::Vacant(entry) => entry.set(vec!(v.to_string())),
+                Entry::Occupied(mut entry) => {
                     (*entry.get_mut()).push(c_v.to_string());
                     entry.into_mut()
                 }
@@ -116,7 +119,7 @@ impl HttpSender {
         let mut t_args = args.clone();
 
         if t_args.len() > 0 {
-            let tmp = t_args.into_string();
+            let tmp = t_args.to_owned();
 
             t_args = String::new();
             t_args.push_str("?");
@@ -129,7 +132,7 @@ impl HttpSender {
                 Accept-Language: fr,en-US;q=0.8,en;q=0.6\r\n\
                 Accept-Encoding: gzip,deflate\r\n\
                 connection: close\r\n\
-                User-Agent: {}\r\n\r\n", self.request_type, self.page, t_args.into_string(), self.address, self.user_agent)
+                User-Agent: {}\r\n\r\n", self.request_type, self.page, t_args.to_owned(), self.address, self.user_agent)
     }
 
     fn create_header_with_args(&self, args : String) -> String {
@@ -141,7 +144,7 @@ impl HttpSender {
                 connection: close\r\n\
                 User-Agent: {}\r\n\
                 Content-Type: application/x-www-form-urlencoded\r\n\
-                Content-Length: {}\r\n\r\n{}\r\n", self.request_type, self.page, self.address, self.user_agent, args.len(), args.into_string())
+                Content-Length: {}\r\n\r\n{}\r\n", self.request_type, self.page, self.address, self.user_agent, args.len(), args.to_owned())
     }
 
     fn create_header(&self) -> String {
@@ -171,12 +174,15 @@ impl HttpSender {
     }
 
     fn from_gzip(&self, v: &Vec<u8>) -> Result<String, String> {
-        let mut g = GzipReader{inner: v.clone()};
+        let mut g = GzDecoder::new(BufReader::new(v.container_as_bytes()));
+
+        Ok(g.read_to_string());
+        /*let mut g = GzipReader{inner: v.clone()};
 
         match g.decode() {
             Ok(res) => Ok(res),
             Err(res) => Err(res.to_string()),
-        }
+        }*/
     }
 
     fn from_utf8(&self, v: &Vec<u8>) -> Result<String, String> {
@@ -204,7 +210,7 @@ impl HttpSender {
                         Err(e) => return Err(e.to_string())
                     }
                     if size == 0 {
-                        return Ok(out.into_string())
+                        return Ok(out.to_owned())
                     }
                 }
             }
@@ -249,8 +255,8 @@ impl HttpSender {
                 let v = segs[1].trim();
 
                 match headers.entry(k.to_string()) {
-                    Vacant(entry) => entry.set(vec!(v.to_string())),
-                    Occupied(mut entry) => {
+                    Entry::Vacant(entry) => entry.set(vec!(v.to_string())),
+                    Entry::Occupied(mut entry) => {
                         (*entry.get_mut()).push(v.to_string());
                         entry.into_mut()
                     }
@@ -269,12 +275,12 @@ impl HttpSender {
         if is_byte_response(&headers) {
             return get_bytes_data(&headers, &mut stream, version, status, reason,
                 match self.output_file {
-                    None => "".into_string(),
+                    None => "".to_owned(),
                     Some(ref f) => f.clone()
                 }, self.verbose);
         }
         for (v, k) in headers.iter() {
-            let tmp_s = v.clone().into_ascii_lower();
+            let tmp_s = v.clone().into_ascii_lowercase();
             if tmp_s == "content-encoding:".to_string() {
                 if k.contains(&("gzip".to_string())) {
                     gzip = true;
@@ -297,7 +303,7 @@ impl HttpSender {
                     self.from_utf8(&l)
                 } {
                    Err(e) => Err(e),
-                   Ok(r) => Ok(ResponseData{body: r.into_string(), headers: headers,
+                   Ok(r) => Ok(ResponseData{body: r.to_owned(), headers: headers,
                             version: version.to_string(), status: status.to_string(), reason: reason.to_string()}),
                 }
             },
@@ -344,7 +350,7 @@ fn is_byte_response(headers: &HashMap<String, Vec<String>>) -> bool {
     let mut found_connection = false;
 
     for (v, k) in headers.iter() {
-        let tmp_s = v.clone().into_ascii_lower();
+        let tmp_s = v.clone().into_ascii_lowercase();
         if tmp_s == "accept-ranges:".to_string() {
             if k.contains(&("bytes".to_string())) {
                 found_range = true;
@@ -426,19 +432,19 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
     let mut begin_bytes = 0u;
 
     for (v, k) in headers.iter() {
-        let tmp_s = v.clone().into_ascii_lower();
+        let tmp_s = v.clone().into_ascii_lowercase();
         if tmp_s == "content-length:".to_string() {
-            length = from_str(k[0].as_slice()).unwrap();
+            length = FromStr::from_str(k[0].as_slice()).unwrap();
         } else if tmp_s == "content-range:".to_string() {
             let tmp_begin : Vec<&str> = k[0].as_slice().split_str(" ").collect();
             let begin = tmp_begin[0];
             let tmp_bytes : Vec<&str> = begin.split_str("-").collect();
 
-            begin_bytes = from_str(tmp_bytes[0]).unwrap();
+            begin_bytes = FromStr::from_str(tmp_bytes[0]).unwrap();
         }
     }
     clean_useless_bytes(stream, begin_bytes, verbose);
-    let mut buf = [0, ..100000];
+    let mut buf = [0; 100000];
     let mut timer = get_time().sec;
     let mut downloaded_data = 0u;
 
@@ -484,7 +490,7 @@ fn get_bytes_data(headers: &HashMap<String, Vec<String>>, stream: &mut BufferedR
             break;
         }
     }
-    Ok(ResponseData{body: "".into_string(), headers: headers.clone(),
+    Ok(ResponseData{body: "".to_owned(), headers: headers.clone(),
         version: version.to_string(), status: status.to_string(), reason: reason.to_string()})
 }
 
